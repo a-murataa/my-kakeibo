@@ -3,23 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我が家の家計簿 Pro+ | Dot View</title>
+    <title>我が家の家計簿 Pro+ | Firebase Sync</title>
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
     <style>
         :root { --primary: #1a73e8; --success: #34a853; --danger: #ea4335; --gray: #5f6368; --bg: #f1f3f4; }
         body { font-family: "Segoe UI", sans-serif; margin: 0; background-color: var(--bg); color: #3c4043; }
         .container { max-width: 1200px; margin: 0 auto; padding: 20px; box-sizing: border-box; }
         header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
         h1 { margin: 0; font-size: 1.5rem; color: var(--primary); }
-
         .main-layout { display: grid; grid-template-columns: 1fr 320px; gap: 20px; }
         .card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 16px; }
-
         #calendar { background: white; padding: 10px; border-radius: 12px; min-height: 650px; }
-        .fc-event { border: none !important; background: transparent !important; display: flex !important; justify-content: center; }
         .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-        .fc-daygrid-event-harness { margin: 2px 0 !important; }
-
         .summary-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 20px; }
         .summary-item { padding: 12px; border-radius: 8px; background: #f8f9fa; border-left: 5px solid var(--gray); }
         .summary-item.total { border-left-color: var(--primary); background: #e8f0fe; }
@@ -27,20 +24,17 @@
         .summary-item.paypay { border-left-color: #ff4b4b; }
         .summary-label { font-size: 0.8rem; color: #5f6368; }
         .summary-value { font-size: 1.25rem; font-weight: bold; display: block; }
-
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
         button { padding: 10px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.9rem; }
         .btn-main { background: var(--primary); color: white; width: 100%; }
         .btn-sub { background: white; color: var(--gray); border: 1px solid #dadce0; }
         .btn-add { background: var(--success); color: white; width: 100%; margin-top: 10px; }
-
         .modal { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
-        .modal-content { background: white; margin: 5% auto; padding: 24px; border-radius: 16px; width: 90%; max-width: 450px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+        .modal-content { background: white; margin: 5% auto; padding: 24px; border-radius: 16px; width: 90%; max-width: 450px; }
         input, select { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #dadce0; border-radius: 8px; box-sizing: border-box; }
-        
         #masterList { max-height: 400px; overflow-y: auto; padding: 10px; border: 1px solid #eee; border-radius: 8px; }
-        
         .daily-item { border-bottom: 1px solid #f1f3f4; padding: 10px 0; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+        .sync-status { font-size: 0.75rem; text-align: center; color: var(--success); margin-top: 5px; }
         @media (max-width: 900px) { .main-layout { grid-template-columns: 1fr; } }
     </style>
 </head>
@@ -67,35 +61,76 @@
                     <button class="btn-sub" onclick="openMaster()">カテゴリ設定</button>
                     <button class="btn-sub" onclick="location.reload()">再読込</button>
                 </div>
+                <div id="syncIndicator" class="sync-status">● クラウドと同期中</div>
             </div>
-            <div class="card"><p style="margin:0; font-size:0.85rem; color:var(--gray);">CSV保存時、カテゴリの絵文字は自動で削除されます。</p></div>
+            <div class="card"><p style="margin:0; font-size:0.85rem; color:var(--gray);">PCで入力した内容は、スマホの同じURLに自動で反映されます。</p></div>
         </div>
     </div>
 </div>
 
 <script>
-    let categories = JSON.parse(localStorage.getItem('kakeibo_categories')) || [
+    // Firebase Configuration (From your screenshot)
+    const firebaseConfig = {
+        apiKey: "AIzaSyDaRbw8-5_wcgg0vqhNFsT2tCRGGkoztLo",
+        authDomain: "my-kakeibo-app-4eace.firebaseapp.com",
+        databaseURL: "https://my-kakeibo-app-4eace-default-rtdb.firebaseio.com", // 念のため予測値。RealtimeDB作成後に確認してください
+        projectId: "my-kakeibo-app-4eace",
+        storageBucket: "my-kakeibo-app-4eace.firebasestorage.app",
+        messagingSenderId: "1063328222498",
+        appId: "1:1063328222498:web:4c83a01347c3c9478ce97b"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let categories = [
         "✨ 未分類", "🍴 食費", "🛒 日用品", "👔 パパ小遣い", "💊 医療費", "👶 オムツ", "🛡️ 保険", "📱 通信費", "🚗 車ローン", "🎓 学用品", "🏠 住宅ローン", "💡 電気ガス", "👗 衣服", "🎁 交際費", "✈️ 特別な支出", "💰 税金", "🧒 子供自由費", "🚃 交通費", "🚰 水道", "📈 iDeCo", "💇 美容院", "🏫 保育料", "🏊 スイミング", "📝 公文", "⛽ ガソリン", "🍺 酒代", "☕ コーヒー代", "🏦 貯蓄", "🍱 外食", "💳 父支払い", "👩 ママお小遣い", "🎫 父Suica", "🔄 サブスク", "📦 ふるさと納税", "🚨 予備費or緊急", "🎁 プレゼント", "🎍 お正月", "🚄 帰省", "🏘️ 自治会費", "🛠️ カインズ", "🔧 車修理", "🏗️ 建て替え", "📺 家電大物", "👛 やりくり費", "🥃 ウイスキー", "🧳 旅行"
     ];
-    
-    const defaultTransactions = [
-        {"id":1,"date":"2026-02-12","cat":"未分類","amount":6454,"acc":"楽天カード","memo":"ＥＮＥＯＳ－ＳＳ"},{"id":2,"date":"2026-02-17","cat":"未分類","amount":2167,"acc":"楽天カード","memo":"ＥＮＥＯＳ－ＳＳ"},{"id":3,"date":"2026-02-22","cat":"未分類","amount":5149,"acc":"楽天カード","memo":"ＥＮＥＯＳ－ＳＳ"},{"id":4,"date":"2026-02-25","cat":"未分類","amount":29235,"acc":"楽天カード","memo":"ｵｵﾀｷｶﾞｽｶﾞｽﾘﾖｳｷﾝ20"},{"id":5,"date":"2026-02-26","cat":"未分類","amount":1000,"acc":"楽天カード","memo":"Ｓｕｉｃａチャージ（楽天ペイ）"},{"id":6,"date":"2026-02-26","cat":"未分類","amount":1300,"acc":"楽天カード","memo":"Ｓｕｉｃａチャージ（楽天ペイ）"},{"id":7,"date":"2026-02-28","cat":"未分類","amount":8391,"acc":"楽天カード","memo":"ａｕ　ご利用代金　２月ご利用分"},{"id":8,"date":"2026-02-28","cat":"未分類","amount":11166,"acc":"PayPay","memo":"ソフトバンクМ"},{"id":9,"date":"2026-03-01","cat":"未分類","amount":4066,"acc":"楽天カード","memo":"ＥＮＥＯＳ－ＳＳ"},{"id":10,"date":"2026-03-01","cat":"未分類","amount":7023,"acc":"楽天カード","memo":"ｾﾝﾄﾞｳ ｼﾝﾓﾊﾞﾗﾃﾝ"},{"id":11,"date":"2026-03-01","cat":"未分類","amount":1991,"acc":"PayPay","memo":"石窯パン工房　ほっぺ"},{"id":12,"date":"2026-03-01","cat":"パパお小遣い","amount":1040,"acc":"PayPay","memo":"セブンーイレブン"},{"id":13,"date":"2026-03-02","cat":"未分類","amount":1640,"acc":"PayPay","memo":"ダイソー"},{"id":14,"date":"2026-03-02","cat":"日用品","amount":1298,"acc":"楽天カード","memo":"AMAZON.CO.JP"},{"id":15,"date":"2026-03-02","cat":"日用品","amount":2290,"acc":"楽天カード","memo":"AMAZON.CO.JP"},{"id":16,"date":"2026-03-02","cat":"未分類","amount":1400,"acc":"楽天カード","memo":"ｻｲｾﾞﾘﾔ/NFC"},{"id":17,"date":"2026-03-02","cat":"未分類","amount":1000,"acc":"楽天カード","memo":"楽天キャッシュ　チャージ"},{"id":18,"date":"2026-03-02","cat":"パパお小遣い","amount":170,"acc":"PayPay","memo":"セブンーイレブン"},{"id":19,"date":"2026-03-02","cat":"未分類","amount":1201,"acc":"PayPay","memo":"セリア"},{"id":20,"date":"2026-03-02","cat":"未分類","amount":1430,"acc":"PayPay","memo":"ウエルシア"},{"id":21,"date":"2026-03-02","cat":"未分類","amount":2000,"acc":"楽天カード","memo":"楽天キャッシュ　チャージ"},{"id":22,"date":"2026-03-03","cat":"未分類","amount":3264,"acc":"楽天カード","memo":"ｾﾝﾄﾞｳ ｼﾝﾓﾊﾞﾗﾃﾝ"},{"id":23,"date":"2026-03-03","cat":"未分類","amount":3311,"acc":"PayPay","memo":"ココス"},{"id":24,"date":"2026-03-03","cat":"パパお小遣い","amount":690,"acc":"PayPay","memo":"セブンーイレブン"},{"id":25,"date":"2026-03-04","cat":"食費","amount":5195,"acc":"PayPay","memo":"ベイシア"},{"id":26,"date":"2026-03-04","cat":"医療費/日用品","amount":2028,"acc":"PayPay","memo":"ヤックスドラッグ茂原小林店"},{"id":27,"date":"2026-03-04","cat":"パパお小遣い","amount":690,"acc":"PayPay","memo":"セブンーイレブン"},{"id":28,"date":"2026-03-05","cat":"未分類","amount":1200,"acc":"楽天カード","memo":"ﾛｲﾔﾙｶﾘ-ﾓﾊﾞﾗﾃﾝ"},{"id":29,"date":"2026-03-05","cat":"日用品","amount":3268,"acc":"PayPay","memo":"カインズ"},{"id":30,"date":"2026-03-05","cat":"パパお小遣い","amount":690,"acc":"PayPay","memo":"セブンーイレブン"},{"id":31,"date":"2026-03-06","cat":"未分類","amount":10000,"acc":"楽天カード","memo":"楽天キャッシュ　チャージ"},{"id":32,"date":"2026-03-06","cat":"パパお小遣い","amount":690,"acc":"PayPay","memo":"セブンーイレブン"},{"id":33,"date":"2026-03-06","cat":"未分類","amount":2299,"acc":"PayPay","memo":"セリア"},{"id":34,"date":"2026-03-06","cat":"日用品","amount":699,"acc":"楽天カード","memo":"AMAZON.CO.JP"},{"id":35,"date":"2026-03-06","cat":"食費","amount":6706,"acc":"PayPay","memo":"カスミ"},{"id":36,"date":"2026-03-07","cat":"未分類","amount":5164,"acc":"楽天カード","memo":"ｷﾞﾖｳﾑｽ-ﾊﾟ- ﾓﾊﾞﾗﾃﾝ"},{"id":37,"date":"2026-03-07","cat":"未分類","amount":748,"acc":"楽天カード","memo":"ﾎﾞﾂﾄ.ﾋﾞ-ｻｲｽﾞ"},{"id":38,"date":"2026-03-07","cat":"未分類","amount":1930,"acc":"PayPay","memo":"マクドナルドモバイルオーダ"},{"id":39,"date":"2026-03-07","cat":"未分類","amount":1500,"acc":"PayPay","memo":"ＴＳＵＴＡＹＡ"},{"id":40,"date":"2026-03-07","cat":"未分類","amount":660,"acc":"PayPay","memo":"ＴＳＵＴＡＹＡ"},{"id":41,"date":"2026-03-07","cat":"パパお小遣い","amount":520,"acc":"PayPay","memo":"セブンーイレブン"},{"id":42,"date":"2026-03-07","cat":"未分類","amount":110,"acc":"PayPay","memo":"ダイソー"},{"id":43,"date":"2026-03-09","cat":"パパお小遣い","amount":690,"acc":"PayPay","memo":"セブンーイレブン"},{"id":44,"date":"2026-03-10","cat":"未分類","amount":265,"acc":"PayPay","memo":"ウエルシア"},{"id":45,"date":"2026-03-10","cat":"パパお小遣い","amount":690,"acc":"PayPay","memo":"セブンーイレブン"},{"id":46,"date":"2026-03-10","cat":"未分類","amount":1100,"acc":"楽天カード","memo":"Ｓｕｉｃａチャージ（楽天ペイ）"},{"id":47,"date":"2026-03-10","cat":"未分類","amount":10000,"acc":"楽天カード","memo":"楽天キャッシュ　チャージ"},{"id":48,"date":"2026-03-10","cat":"日用品","amount":2174,"acc":"楽天カード","memo":"AMAZON.CO.JP"},{"id":49,"date":"2026-03-10","cat":"未分類","amount":1200,"acc":"楽天カード","memo":"Ｓｕｉｃａチャージ（楽天ペイ）"},{"id":50,"date":"2026-03-11","cat":"パパお小遣い","amount":690,"acc":"PayPay","memo":"セブンーイレブン"},{"id":51,"date":"2026-03-11","cat":"未分類","amount":1467,"acc":"PayPay","memo":"ダイソー"},{"id":52,"date":"2026-03-11","cat":"食費","amount":2710,"acc":"PayPay","memo":"カスミ"},{"id":53,"date":"2026-03-11","cat":"未分類","amount":2970,"acc":"PayPay","memo":"そだちえ　ＳｔａｒＦｒａｍ"},{"id":54,"date":"2026-03-11","cat":"医療費/日用品","amount":4478,"acc":"PayPay","memo":"ヤックスドラッグ茂原小林店"},{"id":55,"date":"2026-03-11","cat":"医療費/日用品","amount":5407,"acc":"PayPay","memo":"ヤックスドラッグ茂原小林店"},{"id":56,"date":"2026-03-12","cat":"未分類","amount":2500,"acc":"楽天カード","memo":"Ｓｕｉｃａチャージ（楽天ペイ）"},{"id":57,"date":"2026-03-12","cat":"パパお小遣い","amount":1040,"acc":"PayPay","memo":"セブンーイレブン"},{"id":58,"date":"2026-03-13","cat":"未分類","amount":750,"acc":"PayPay","memo":"モーゼスさんのケバブ　秋葉"},{"id":59,"date":"2026-03-13","cat":"パパお小遣い","amount":872,"acc":"PayPay","memo":"ローソン"},{"id":60,"date":"2026-03-13","cat":"医療費/日用品","amount":1157,"acc":"PayPay","memo":"ヤックスドラッグ茂原小林店"},{"id":61,"date":"2026-03-13","cat":"未分類","amount":1540,"acc":"PayPay","memo":"ケンタッキーフライドチキン"},{"id":62,"date":"2026-03-13","cat":"パパお小遣い","amount":170,"acc":"PayPay","memo":"セブンーイレブン"},{"id":63,"date":"2026-03-13","cat":"未分類","amount":1100,"acc":"楽天カード","memo":"Ｓｕｉｃａチャージ（楽天ペイ）"},{"id":64,"date":"2026-03-13","cat":"未分類","amount":2500,"acc":"楽天カード","memo":"楽天キャッシュ　チャージ"},{"id":65,"date":"2026-03-13","cat":"未分類","amount":2500,"acc":"楽天カード","memo":"Ｓｕｉｃａチャージ（楽天ペイ）"},{"id":66,"date":"2026-03-13","cat":"未分類","amount":660,"acc":"楽天カード","memo":"JRﾋｶﾞｼﾆﾎﾝ ｴｷﾈ ｯﾄ"},{"id":67,"date":"2026-03-14","cat":"未分類","amount":660,"acc":"PayPay","memo":"セリア"},{"id":68,"date":"2026-03-14","cat":"未分類","amount":1030,"acc":"PayPay","memo":"ファミリーマート"},{"id":69,"date":"2026-03-14","cat":"未分類","amount":1740,"acc":"PayPay","memo":"ほっともっと"},{"id":70,"date":"2026-03-14","cat":"未分類","amount":1961,"acc":"PayPay","memo":"石窯パン工房　ほっぺ"},{"id":71,"date":"2026-03-14","cat":"食費","amount":16349,"acc":"PayPay","memo":"ベイシア"},{"id":72,"date":"2026-03-15","cat":"日用品","amount":590,"acc":"PayPay","memo":"カインズ"},{"id":73,"date":"2026-03-15","cat":"日用品","amount":596,"acc":"PayPay","memo":"カインズ"},{"id":74,"date":"2026-03-15","cat":"日用品","amount":1040,"acc":"PayPay","memo":"カインズ"},{"id":75,"date":"2026-03-15","cat":"未分類","amount":5580,"acc":"楽天カード","memo":"こめた　楽天市場店"},{"id":76,"date":"2026-03-15","cat":"日用品","amount":128,"acc":"PayPay","memo":"カインズ"},{"id":77,"date":"2026-03-15","cat":"未分類","amount":7561,"acc":"楽天カード","memo":"ｷﾞﾖｳﾑｽ-ﾊﾟ- ﾓﾊﾞﾗﾃﾝ"},{"id":78,"date":"2026-03-16","cat":"未分類","amount":5000,"acc":"楽天カード","memo":"Ｓｕｉｃａチャージ（楽天ペイ）"},{"id":79,"date":"2026-03-16","cat":"パパお小遣い","amount":170,"acc":"PayPay","memo":"セブンーイレブン"},{"id":80,"date":"2026-03-16","cat":"未分類","amount":2930,"acc":"PayPay","memo":"Ｗｏｎｄｅｒ"},{"id":81,"date":"2026-03-17","cat":"パパお小遣い","amount":690,"acc":"PayPay","memo":"セブンーイレブン"},{"id":82,"date":"2026-03-17","cat":"医療費/日用品","amount":2584,"acc":"PayPay","memo":"ヤックスドラッグ茂原小林店"},{"id":83,"date":"2026-03-18","cat":"未分類","amount":9901,"acc":"楽天カード","memo":"ｷﾞﾖｳﾑｽ-ﾊﾟ- ﾓﾊﾞﾗﾃﾝ"},{"id":84,"date":"2026-03-18","cat":"未分類","amount":14960,"acc":"楽天カード","memo":"ｸﾓＮｼｷｷﾖｳｼﾂ"},{"id":85,"date":"2026-03-18","cat":"未分類","amount":2373,"acc":"楽天カード","memo":"ｼﾔﾄﾚ-ｾﾞ ﾓﾊﾞﾗﾃﾝ"},{"id":86,"date":"2026-03-18","cat":"パパお小遣い","amount":170,"acc":"PayPay","memo":"セブンーイレブン"},{"id":87,"date":"2026-03-19","cat":"パパお小遣い","amount":690,"acc":"PayPay","memo":"セブンーイレブン"},{"id":88,"date":"2026-03-19","cat":"パパお小遣い","amount":1120,"acc":"PayPay","memo":"セブンーイレブン"},{"id":89,"date":"2026-03-19","cat":"未分類","amount":5635,"acc":"楽天カード","memo":"ｾﾝﾄﾞｳ ｼﾝﾓﾊﾞﾗﾃﾝ"},{"id":90,"date":"2026-03-19","cat":"未分類","amount":4500,"acc":"楽天カード","memo":"NINTENDO CC159140"},{"id":91,"date":"2026-03-20","cat":"日用品","amount":298,"acc":"PayPay","memo":"カインズ"},{"id":92,"date":"2026-03-20","cat":"未分類","amount":220,"acc":"PayPay","memo":"セリア"},{"id":93,"date":"2026-03-20","cat":"食費","amount":520,"acc":"PayPay","memo":"ベイシア"},{"id":94,"date":"2026-03-20","cat":"未分類","amount":550,"acc":"PayPay","memo":"セリア"},{"id":95,"date":"2026-03-20","cat":"未分類","amount":1188,"acc":"PayPay","memo":"ケーズデンキ"},{"id":96,"date":"2026-03-20","cat":"日用品","amount":2117,"acc":"PayPay","memo":"カインズ"},{"id":97,"date":"2026-03-20","cat":"日用品","amount":128,"acc":"PayPay","memo":"カインズ"},{"id":98,"date":"2026-03-20","cat":"未分類","amount":3130,"acc":"PayPay","memo":"桃．華飯店"},{"id":99,"date":"2026-03-20","cat":"日用品","amount":1870,"acc":"楽天カード","memo":"AMAZON.CO.JP"},{"id":100,"date":"2026-03-20","cat":"食費","amount":6538,"acc":"PayPay","memo":"ベイシア"},{"id":101,"date":"2026-03-21","cat":"未分類","amount":1534,"acc":"PayPay","memo":"ケーズデンキ"},{"id":102,"date":"2026-03-21","cat":"食費","amount":5322,"acc":"PayPay","memo":"カスミ"},{"id":103,"date":"2026-03-21","cat":"パパお小遣い","amount":718,"acc":"PayPay","memo":"セブンーイレブン"},{"id":104,"date":"2026-03-21","cat":"未分類","amount":300,"acc":"PayPay","memo":"ファミリーマート"},{"id":105,"date":"2026-03-22","cat":"パパお小遣い","amount":520,"acc":"PayPay","memo":"セブンーイレブン"},{"id":106,"date":"2026-03-22","cat":"パパお小遣い","amount":645,"acc":"PayPay","memo":"セブンーイレブン"},{"id":107,"date":"2026-03-22","cat":"未分類","amount":27900,"acc":"楽天カード","memo":"ＳＢＩ損害保険"},{"id":108,"date":"2026-03-22","cat":"未分類","amount":5000,"acc":"楽天カード","memo":"楽天キャッシュ　チャージ"},{"id":109,"date":"2026-03-22","cat":"未分類","amount":4413,"acc":"PayPay","memo":"マツモトキヨシ"},{"id":110,"date":"2026-03-23","cat":"パパお小遣い","amount":1040,"acc":"PayPay","memo":"セブンーイレブン"},{"id":111,"date":"2026-03-23","cat":"パパお小遣い","amount":2530,"acc":"PayPay","memo":"セブンーイレブン"},{"id":112,"date":"2026-03-23","cat":"未分類","amount":200,"acc":"PayPay","memo":"関東フローズン"},{"id":113,"date":"2026-03-23","cat":"未分類","amount":300,"acc":"楽天カード","memo":"ﾃﾞｼﾞｽﾏ ﾔﾏﾉｳﾁﾋﾞﾖｳｲ"},{"id":114,"date":"2026-03-23","cat":"未分類","amount":799,"acc":"楽天カード","memo":"ﾒﾙｶﾘ"},{"id":115,"date":"2026-03-23","cat":"未分類","amount":150,"acc":"PayPay","memo":"関東フローズン"},{"id":116,"date":"2026-03-24","cat":"未分類","amount":1751,"acc":"PayPay","memo":"ランドロームフードマーケッ"},{"id":117,"date":"2026-03-24","cat":"未分類","amount":110,"acc":"PayPay","memo":"キャンドゥ"},{"id":118,"date":"2026-03-24","cat":"未分類","amount":4556,"acc":"楽天カード","memo":"子育ての店　ベビー・キッズ"},{"id":119,"date":"2026-03-24","cat":"日用品","amount":945,"acc":"楽天カード","memo":"AMAZON.CO.JP"},{"id":120,"date":"2026-03-24","cat":"パパお小遣い","amount":1793,"acc":"PayPay","memo":"セブンーイレブン"},{"id":121,"date":"2026-03-25","cat":"医療費/日用品","amount":3046,"acc":"PayPay","memo":"ヤックスドラッグ茂原小林店"},{"id":122,"date":"2026-03-26","cat":"未分類","amount":32890,"acc":"PayPay","memo":"株式会社　サンアイク"},{"id":123,"date":"2026-03-26","cat":"食費","amount":7411,"acc":"PayPay","memo":"ベイシア"},{"id":124,"date":"2026-03-26","cat":"未分類","amount":1430,"acc":"PayPay","memo":"セリア"},{"id":125,"date":"2026-03-26","cat":"パパお小遣い","amount":690,"acc":"PayPay","memo":"セブンーイレブン"},{"id":126,"date":"2026-03-27","cat":"パパお小遣い","amount":690,"acc":"PayPay","memo":"セブンーイレブン"},{"id":127,"date":"2026-03-27","cat":"パパお小遣い","amount":1779,"acc":"PayPay","memo":"セブンーイレブン"},{"id":128,"date":"2026-03-27","cat":"未分類","amount":373,"acc":"PayPay","memo":"ランドロームフードマーケッ"},{"id":129,"date":"2026-03-28","cat":"未分類","amount":2062,"acc":"PayPay","memo":"石窯パン工房　ほっぺ"},{"id":130,"date":"2026-03-28","cat":"未分類","amount":690,"acc":"PayPay","memo":"ファミリーマート"},{"id":131,"date":"2026-03-29","cat":"未分類","amount":8897,"acc":"PayPay","memo":"ステーキ宮"},{"id":132,"date":"2026-03-29","cat":"パパお小遣い","amount":1684,"acc":"PayPay","memo":"セブンーイレブン"},{"id":133,"date":"2026-03-30","cat":"食費","amount":2759,"acc":"PayPay","memo":"カスミ"},{"id":134,"date":"2026-03-30","cat":"医療費/日用品","amount":2472,"acc":"PayPay","memo":"ヤックスドラッグ茂原小林店"},{"id":135,"date":"2026-03-30","cat":"医療費/日用品","amount":3444,"acc":"PayPay","memo":"ヤックスドラッグ茂原小林店"},{"id":136,"date":"2026-03-30","cat":"パパお小遣い","amount":690,"acc":"PayPay","memo":"セブンーイレブン"}
-    ];
-
-    let transactions = JSON.parse(localStorage.getItem('kakeibo_transactions')) || defaultTransactions;
-
+    let transactions = [];
     let calendar;
     let selectedDate = "";
     let currentEditId = null;
 
+    // --- Data Sync Logic ---
+
+    // クラウドからデータ取得
+    db.ref('kakeibo_data').on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            transactions = data.transactions || [];
+            if(data.categories) categories = data.categories;
+            updateUI();
+            document.getElementById('syncIndicator').innerText = "● 同期済み";
+            document.getElementById('syncIndicator').style.color = "var(--success)";
+        } else {
+            // 初回起動時、何もなければLocalから移行
+            const localData = JSON.parse(localStorage.getItem('kakeibo_transactions'));
+            if(localData) {
+                transactions = localData;
+                saveToCloud();
+            }
+        }
+    });
+
+    function saveToCloud() {
+        document.getElementById('syncIndicator').innerText = "● 保存中...";
+        document.getElementById('syncIndicator').style.color = "orange";
+        db.ref('kakeibo_data').set({
+            transactions: transactions,
+            categories: categories
+        });
+    }
+
+    // --- UI Logic ---
+
     document.addEventListener('DOMContentLoaded', function() {
         calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
             initialView: 'dayGridMonth',
-            initialDate: '2026-03-01',
             locale: 'ja',
             height: 650,
             headerToolbar: { left: 'prev,next today', center: 'title', right: '' },
-            events: getDotEvents(),
+            events: [],
             dateClick: (info) => showDailyDetail(info.dateStr),
             eventClick: (info) => showDailyDetail(info.event.startStr),
             eventContent: function(arg) {
@@ -106,8 +141,23 @@
             }
         });
         calendar.render();
-        updateAll();
     });
+
+    function updateUI() {
+        // UI更新処理
+        let t=0, r=0, p=0;
+        transactions.forEach(d => {
+            t += d.amount;
+            if(d.acc === '楽天カード') r += d.amount;
+            else if(d.acc === 'PayPay') p += d.amount;
+        });
+        document.getElementById('total-amount').innerText = `¥${t.toLocaleString()}`;
+        document.getElementById('rakuten-total').innerText = `¥${r.toLocaleString()}`;
+        document.getElementById('paypay-total').innerText = `¥${p.toLocaleString()}`;
+        
+        calendar.removeAllEvents();
+        calendar.addEventSource(getDotEvents());
+    }
 
     function getDotEvents() {
         const dailySummary = {};
@@ -126,65 +176,20 @@
         return events;
     }
 
-    function updateAll() {
-        localStorage.setItem('kakeibo_transactions', JSON.stringify(transactions));
-        localStorage.setItem('kakeibo_categories', JSON.stringify(categories));
-        let t=0, r=0, p=0;
-        transactions.forEach(d => {
-            t += d.amount;
-            if(d.acc === '楽天カード') r += d.amount;
-            else if(d.acc === 'PayPay') p += d.amount;
-        });
-        document.getElementById('total-amount').innerText = `¥${t.toLocaleString()}`;
-        document.getElementById('rakuten-total').innerText = `¥${r.toLocaleString()}`;
-        document.getElementById('paypay-total').innerText = `¥${p.toLocaleString()}`;
-        calendar.removeAllEvents();
-        calendar.addEventSource(getDotEvents());
-    }
-
-    function uploadCSV(input) {
-        const file = input.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            const text = e.target.result;
-            const lines = text.split('\n');
-            const newTransactions = [];
-            for (let i = 1; i < lines.length; i++) {
-                if (!lines[i].trim()) continue;
-                const cols = lines[i].split(',');
-                if (cols.length < 7) continue;
-                const dStr = cols[0];
-                const fDate = `${dStr.substring(0,4)}-${dStr.substring(4,6)}-${dStr.substring(6,8)}`;
-                newTransactions.push({ id: Date.now()+i, date: fDate, cat: cols[1], amount: parseInt(cols[2])||0, acc: cols[5], memo: cols[6] });
-            }
-            if (newTransactions.length > 0) {
-                transactions = newTransactions;
-                updateAll();
-                alert(`${newTransactions.length}件を読み込み保存しました。`);
-            }
-        };
-        reader.readAsText(file);
-        input.value = '';
-    }
-
-    // CSV保存時に絵文字を除去する関数
     function cleanEmoji(text) {
-        // 絵文字や特殊記号を正規表現で除去し、前後の空白を消す
         return text.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim();
     }
 
     function downloadCSV() {
         let csv = "\uFEFF日付,カテゴリ,金額,通貨,対象者,アカウント,メモ,収支区分\n";
         transactions.forEach(d => {
-            // カテゴリ名から絵文字を抜く
             const cleanCat = cleanEmoji(d.cat);
             csv += `${d.date.replace(/-/g, '')},${cleanCat},${d.amount},JPY,本人,${d.acc},${d.memo},支\n`;
         });
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
-        link.download = `kakeibo_${new Date().toISOString().slice(0,10)}.csv`;
+        link.download = `kakeibo_sync_${new Date().toISOString().slice(0,10)}.csv`;
         link.click();
     }
 
@@ -212,7 +217,7 @@
             document.getElementById('editAmount').value = it.amount;
             document.getElementById('editMemo').value = it.memo;
         } else {
-            document.getElementById('editDate').value = selectedDate || new Date().toISOString().split('T')[0];
+            document.getElementById('editDate').value = selectedDate;
             document.getElementById('editAmount').value = ""; document.getElementById('editMemo').value = "";
         }
         document.getElementById('editModal').style.display = 'block';
@@ -230,7 +235,8 @@
             const i = transactions.findIndex(t => t.id === currentEditId);
             transactions[i] = { id: currentEditId, ...d };
         } else { transactions.push({ id: Date.now(), ...d }); }
-        updateAll(); showDailyDetail(d.date);
+        saveToCloud();
+        showDailyDetail(d.date);
         document.getElementById('editModal').style.display = 'none';
     }
 
@@ -238,8 +244,8 @@
         const list = document.getElementById('masterList');
         list.innerHTML = categories.map((c, i) => `
             <div style="display:flex; gap:5px; margin-bottom:8px; align-items:center;">
-                <input type="text" value="${c}" style="margin:0; flex-grow:1;" onchange="categories[${i}]=this.value; updateAll();">
-                <button class="btn-sub" onclick="categories.splice(${i},1); openMaster(); updateAll();" style="padding:5px 12px; color:var(--danger); border-color:var(--danger);">×</button>
+                <input type="text" value="${c}" style="margin:0; flex-grow:1;" onchange="categories[${i}]=this.value; saveToCloud();">
+                <button class="btn-sub" onclick="categories.splice(${i},1); openMaster(); saveToCloud();" style="color:var(--danger); border-color:var(--danger);">×</button>
             </div>
         `).join('');
         document.getElementById('masterModal').style.display = 'block';
@@ -247,10 +253,36 @@
 
     function addCat() {
         const v = document.getElementById('newCatName').value;
-        if(v) { categories.push(v); document.getElementById('newCatName').value=''; updateAll(); openMaster(); }
+        if(v) { categories.push(v); document.getElementById('newCatName').value=''; saveToCloud(); openMaster(); }
     }
 
     function closeModals() { document.querySelectorAll('.modal').forEach(m => m.style.display = 'none'); }
+
+    function uploadCSV(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const text = e.target.result;
+            const lines = text.split('\n');
+            const newTransactions = [];
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                const cols = lines[i].split(',');
+                if (cols.length < 7) continue;
+                const dStr = cols[0];
+                const fDate = `${dStr.substring(0,4)}-${dStr.substring(4,6)}-${dStr.substring(6,8)}`;
+                newTransactions.push({ id: Date.now()+i, date: fDate, cat: cols[1], amount: parseInt(cols[2])||0, acc: cols[5], memo: cols[6] });
+            }
+            if (newTransactions.length > 0) {
+                transactions = newTransactions;
+                saveToCloud();
+                alert(`${newTransactions.length}件を読み込み同期しました。`);
+            }
+        };
+        reader.readAsText(file);
+        input.value = '';
+    }
 </script>
 
 <div id="dayModal" class="modal"><div class="modal-content">
@@ -267,7 +299,7 @@
     <select id="editCat"></select>
     <input type="number" id="editAmount" placeholder="金額">
     <input type="text" id="editMemo" placeholder="メモ">
-    <button class="btn-main" onclick="saveEdit()">保存</button>
+    <button class="btn-main" onclick="saveEdit()">保存して同期</button>
     <button class="btn-sub" style="width:100%; margin-top:5px;" onclick="closeModals()">キャンセル</button>
 </div></div>
 
