@@ -17,9 +17,21 @@
         .card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 16px; }
         #calendar { background: white; padding: 10px; border-radius: 12px; min-height: 650px; }
         
-        /* カレンダーのドット表示用 */
-        .fc-daygrid-event { background: none !important; border: none !important; justify-content: center !important; }
-        .fc-event-title { font-size: 1.2rem !important; font-weight: bold; text-align: center; width: 100%; }
+        /* --- カレンダーの赤ドット表示用CSS --- */
+        .fc-daygrid-event {
+            background: none !important;
+            border: none !important;
+            justify-content: center !important;
+            cursor: pointer;
+        }
+        .fc-event-title {
+            font-size: 1.2rem !important;
+            color: #ea4335 !important; /* 強制的に赤色にする */
+            font-weight: bold;
+            text-align: center;
+            width: 100%;
+        }
+        /* ---------------------------------- */
 
         .summary-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 20px; }
         .summary-item { padding: 12px; border-radius: 8px; background: #f8f9fa; border-left: 5px solid var(--gray); }
@@ -69,6 +81,7 @@
                 </div>
                 <div id="syncIndicator" class="sync-status">● クラウドと同期中</div>
             </div>
+            <div class="card"><p style="margin:0; font-size:0.85rem; color:var(--gray);">PCで入力した内容は、スマホの同じURLに自動で反映されます。</p></div>
         </div>
     </div>
 </div>
@@ -118,7 +131,7 @@
             headerToolbar: { left: 'prev,next today', center: 'title', right: '' },
             dateClick: (info) => showDailyDetail(info.dateStr),
             eventClick: (info) => showDailyDetail(info.event.startStr),
-            datesSet: () => updateUI()
+            datesSet: () => updateUI() // 月切り替え時に集計を更新
         });
         calendar.render();
     });
@@ -150,14 +163,14 @@
         calendar.addEventSource(getDotEvents());
     }
 
-    // ドットを赤に固定
     function getDotEvents() {
+        // 重複を除いた日付リストを作成
         const uniqueDates = [...new Set(transactions.map(t => t.date))];
         return uniqueDates.map(date => ({
             start: date,
             title: '●',
             color: 'transparent',
-            textColor: '#ea4335', // 赤色に固定
+            textColor: '#ea4335', // 赤色
             allDay: true,
             display: 'list-item'
         }));
@@ -168,16 +181,20 @@
         const viewYear = currentViewDate.getFullYear();
         const viewMonth = currentViewDate.getMonth();
         const monthLabel = `${viewYear}${String(viewMonth + 1).padStart(2, '0')}`;
+        
         let csv = "\uFEFF日付,カテゴリ,金額,通貨,対象者,アカウント,メモ,収支区分\n";
         const filtered = transactions.filter(d => {
             const dDate = new Date(d.date);
             return dDate.getFullYear() === viewYear && dDate.getMonth() === viewMonth;
         });
+        
         if (filtered.length === 0) { alert("この月のデータはありません。"); return; }
+        
         filtered.forEach(d => {
             const cleanCat = cleanEmoji(d.cat);
             csv += `${d.date.replace(/-/g, '')},${cleanCat},${d.amount},JPY,本人,${d.acc},${d.memo},支\n`;
         });
+        
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
@@ -212,6 +229,7 @@
             document.getElementById('editMemo').value = it.memo;
         } else {
             document.getElementById('editDate').value = selectedDate;
+            document.getElementById('editAcc').value = "楽天カード";
             document.getElementById('editAmount').value = ""; document.getElementById('editMemo').value = "";
         }
         document.getElementById('editModal').style.display = 'block';
