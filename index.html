@@ -17,6 +17,7 @@
         .card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 16px; }
         #calendar { background: white; padding: 10px; border-radius: 12px; min-height: 650px; }
         
+        /* カレンダーのドット表示用 */
         .fc-daygrid-event { background: none !important; border: none !important; justify-content: center !important; }
         .fc-event-title { font-size: 1.2rem !important; font-weight: bold; text-align: center; width: 100%; }
 
@@ -25,7 +26,7 @@
         .summary-item.total { border-left-color: var(--primary); background: #e8f0fe; }
         .summary-item.rakuten { border-left-color: #bf0000; }
         .summary-item.paypay { border-left-color: #ff4b4b; }
-        .summary-item.cash { border-left-color: #5f6368; } /* 現金用の色分け */
+        .summary-item.cash { border-left-color: #5f6368; }
         .summary-label { font-size: 0.8rem; color: #5f6368; }
         .summary-value { font-size: 1.25rem; font-weight: bold; display: block; }
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
@@ -68,7 +69,6 @@
                 </div>
                 <div id="syncIndicator" class="sync-status">● クラウドと同期中</div>
             </div>
-            <div class="card"><p style="margin:0; font-size:0.85rem; color:var(--gray);">PCで入力した内容は、スマホの同じURLに自動で反映されます。</p></div>
         </div>
     </div>
 </div>
@@ -150,22 +150,17 @@
         calendar.addEventSource(getDotEvents());
     }
 
+    // ドットを赤に固定
     function getDotEvents() {
-        const dailySummary = {};
-        transactions.forEach(t => {
-            if (!dailySummary[t.date]) dailySummary[t.date] = { accs: new Set() };
-            dailySummary[t.date].accs.add(t.acc);
-        });
-        const events = [];
-        for (const date in dailySummary) {
-            const accs = dailySummary[date].accs;
-            let color = '#5f6368'; // 基本（現金のみ含む）はグレー
-            if (accs.has('楽天カード')) color = '#bf0000';
-            else if (accs.has('PayPay')) color = '#ff4b4b';
-            // 現金がある場合でも、楽天やPayPayがあればそちらの色を優先、無ければグレー（現金色）でドット表示
-            events.push({ start: date, title: '●', color: 'transparent', textColor: color, allDay: true, display: 'list-item' });
-        }
-        return events;
+        const uniqueDates = [...new Set(transactions.map(t => t.date))];
+        return uniqueDates.map(date => ({
+            start: date,
+            title: '●',
+            color: 'transparent',
+            textColor: '#ea4335', // 赤色に固定
+            allDay: true,
+            display: 'list-item'
+        }));
     }
 
     function downloadCSV() {
@@ -217,7 +212,6 @@
             document.getElementById('editMemo').value = it.memo;
         } else {
             document.getElementById('editDate').value = selectedDate;
-            document.getElementById('editAcc').value = "楽天カード";
             document.getElementById('editAmount').value = ""; document.getElementById('editMemo').value = "";
         }
         document.getElementById('editModal').style.display = 'block';
