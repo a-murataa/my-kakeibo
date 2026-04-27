@@ -17,25 +17,15 @@
         .card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 16px; }
         #calendar { background: white; padding: 10px; border-radius: 12px; min-height: 650px; }
         
-        /* --- カレンダーのドット表示を整える修正 --- */
-        .fc-daygrid-event {
-            background: none !important;
-            border: none !important;
-            justify-content: center !important;
-        }
-        .fc-event-title {
-            font-size: 1.2rem !important; /* ドットの大きさ */
-            font-weight: bold;
-            text-align: center;
-            width: 100%;
-        }
-        /* --- 修正ここまで --- */
+        .fc-daygrid-event { background: none !important; border: none !important; justify-content: center !important; }
+        .fc-event-title { font-size: 1.2rem !important; font-weight: bold; text-align: center; width: 100%; }
 
         .summary-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 20px; }
         .summary-item { padding: 12px; border-radius: 8px; background: #f8f9fa; border-left: 5px solid var(--gray); }
         .summary-item.total { border-left-color: var(--primary); background: #e8f0fe; }
         .summary-item.rakuten { border-left-color: #bf0000; }
         .summary-item.paypay { border-left-color: #ff4b4b; }
+        .summary-item.cash { border-left-color: #5f6368; } /* 現金用の色分け */
         .summary-label { font-size: 0.8rem; color: #5f6368; }
         .summary-value { font-size: 1.25rem; font-weight: bold; display: block; }
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
@@ -68,9 +58,10 @@
         <div id="calendar" class="card"></div>
         <div class="side-panel">
             <div class="card summary-grid">
-                <div class="summary-item total"><span class="summary-label">今月の総支出</span><span id="total-amount" class="summary-value">¥0</span></div>
+                <div class="summary-item total"><span class="summary-label" id="summary-month-label">今月の総支出</span><span id="total-amount" class="summary-value">¥0</span></div>
                 <div class="summary-item rakuten"><span class="summary-label">楽天カード</span><span id="rakuten-total" class="summary-value">¥0</span></div>
                 <div class="summary-item paypay"><span class="summary-label">PayPay</span><span id="paypay-total" class="summary-value">¥0</span></div>
+                <div class="summary-item cash"><span class="summary-label">現金</span><span id="cash-total" class="summary-value">¥0</span></div>
                 <div class="btn-group">
                     <button class="btn-sub" onclick="openMaster()">カテゴリ設定</button>
                     <button class="btn-sub" onclick="location.reload()">再読込</button>
@@ -96,9 +87,7 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    let categories = [
-        "✨ 未分類", "🍴 食費", "🛒 日用品", "👔 パパ小遣い", "💊 医療費", "👶 オムツ", "🛡️ 保険", "📱 通信費", "🚗 車ローン", "🎓 学用品", "🏠 住宅ローン", "💡 電気ガス", "👗 衣服", "🎁 交際費", "✈️ 特別な支出", "💰 税金", "🧒 子供自由費", "🚃 交通費", "🚰 水道", "📈 iDeCo", "💇 美容院", "🏫 保育料", "🏊 スイミング", "📝 公文", "⛽ ガソリン", "🍺 酒代", "☕ コーヒー代", "🏦 貯蓄", "🍱 外食", "💳 父支払い", "👩 ママお小遣い", "🎫 父Suica", "🔄 サブスク", "📦 ふるさと納税", "🚨 予備費or緊急", "🎁 プレゼント", "🎍 お正月", "🚄 帰省", "🏘️ 自治会費", "🛠️ カインズ", "🔧 車修理", "🏗️ 建て替え", "📺 家電大物", "👛 やりくり費", "🥃 ウイスキー", "🧳 旅行"
-    ];
+    let categories = ["✨ 未分類", "🍴 食費", "🛒 日用品", "👔 パパ小遣い", "💊 医療費", "👶 オムツ", "🛡️ 保険", "📱 通信費", "🚗 車ローン", "🎓 学用品", "🏠 住宅ローン", "💡 電気ガス", "👗 衣服", "🎁 交際費", "✈️ 特別な支出", "💰 税金", "🧒 子供自由費", "🚃 交通費", "🚰 水道", "📈 iDeCo", "💇 美容院", "🏫 保育料", "🏊 スイミング", "📝 公文", "⛽ ガソリン", "🍺 酒代", "☕ コーヒー代", "🏦 貯蓄", "🍱 外食", "💳 父支払い", "👩 ママお小遣い", "🎫 父Suica", "🔄 サブスク", "📦 ふるさと納税", "🚨 予備費or緊急", "🎁 プレゼント", "🎍 お正月", "🚄 帰省", "🏘️ 自治会費", "🛠️ カインズ", "🔧 車修理", "🏗️ 建て替え", "📺 家電大物", "👛 やりくり費", "🥃 ウイスキー", "🧳 旅行"];
     let transactions = [];
     let calendar;
     let selectedDate = "";
@@ -112,22 +101,13 @@
             updateUI();
             document.getElementById('syncIndicator').innerText = "● 同期済み";
             document.getElementById('syncIndicator').style.color = "var(--success)";
-        } else {
-            const localData = JSON.parse(localStorage.getItem('kakeibo_transactions'));
-            if(localData) {
-                transactions = localData;
-                saveToCloud();
-            }
         }
     });
 
     function saveToCloud() {
         document.getElementById('syncIndicator').innerText = "● 保存中...";
         document.getElementById('syncIndicator').style.color = "orange";
-        db.ref('kakeibo_data').set({
-            transactions: transactions,
-            categories: categories
-        });
+        db.ref('kakeibo_data').set({ transactions, categories });
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -136,71 +116,81 @@
             locale: 'ja',
             height: 650,
             headerToolbar: { left: 'prev,next today', center: 'title', right: '' },
-            events: [],
             dateClick: (info) => showDailyDetail(info.dateStr),
             eventClick: (info) => showDailyDetail(info.event.startStr),
+            datesSet: () => updateUI()
         });
         calendar.render();
     });
 
     function updateUI() {
-        let t=0, r=0, p=0;
+        if (!calendar) return;
+        const currentViewDate = calendar.getDate();
+        const viewYear = currentViewDate.getFullYear();
+        const viewMonth = currentViewDate.getMonth();
+
+        let t=0, r=0, p=0, c=0;
         transactions.forEach(d => {
-            t += d.amount;
-            if(d.acc === '楽天カード') r += d.amount;
-            else if(d.acc === 'PayPay') p += d.amount;
+            const dDate = new Date(d.date);
+            if (dDate.getFullYear() === viewYear && dDate.getMonth() === viewMonth) {
+                t += d.amount;
+                if(d.acc === '楽天カード') r += d.amount;
+                else if(d.acc === 'PayPay') p += d.amount;
+                else if(d.acc === '現金') c += d.amount;
+            }
         });
+
+        document.getElementById('summary-month-label').innerText = `${viewMonth + 1}月の総支出`;
         document.getElementById('total-amount').innerText = `¥${t.toLocaleString()}`;
         document.getElementById('rakuten-total').innerText = `¥${r.toLocaleString()}`;
         document.getElementById('paypay-total').innerText = `¥${p.toLocaleString()}`;
+        document.getElementById('cash-total').innerText = `¥${c.toLocaleString()}`;
         
         calendar.removeAllEvents();
         calendar.addEventSource(getDotEvents());
     }
 
-    // --- ドット表示のための修正ロジック ---
     function getDotEvents() {
         const dailySummary = {};
         transactions.forEach(t => {
             if (!dailySummary[t.date]) dailySummary[t.date] = { accs: new Set() };
             dailySummary[t.date].accs.add(t.acc);
         });
-
         const events = [];
         for (const date in dailySummary) {
             const accs = dailySummary[date].accs;
-            let color = '#5f6368';
+            let color = '#5f6368'; // 基本（現金のみ含む）はグレー
             if (accs.has('楽天カード')) color = '#bf0000';
             else if (accs.has('PayPay')) color = '#ff4b4b';
-
-            events.push({
-                start: date,
-                title: '●',        // 文字としてドットを表示
-                color: 'transparent', 
-                textColor: color,   // ドットの色
-                allDay: true,
-                display: 'list-item' // これにより点形式になります
-            });
+            // 現金がある場合でも、楽天やPayPayがあればそちらの色を優先、無ければグレー（現金色）でドット表示
+            events.push({ start: date, title: '●', color: 'transparent', textColor: color, allDay: true, display: 'list-item' });
         }
         return events;
     }
 
-    function cleanEmoji(text) {
-        return text.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim();
-    }
-
     function downloadCSV() {
+        const currentViewDate = calendar.getDate();
+        const viewYear = currentViewDate.getFullYear();
+        const viewMonth = currentViewDate.getMonth();
+        const monthLabel = `${viewYear}${String(viewMonth + 1).padStart(2, '0')}`;
         let csv = "\uFEFF日付,カテゴリ,金額,通貨,対象者,アカウント,メモ,収支区分\n";
-        transactions.forEach(d => {
+        const filtered = transactions.filter(d => {
+            const dDate = new Date(d.date);
+            return dDate.getFullYear() === viewYear && dDate.getMonth() === viewMonth;
+        });
+        if (filtered.length === 0) { alert("この月のデータはありません。"); return; }
+        filtered.forEach(d => {
             const cleanCat = cleanEmoji(d.cat);
             csv += `${d.date.replace(/-/g, '')},${cleanCat},${d.amount},JPY,本人,${d.acc},${d.memo},支\n`;
         });
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
-        link.download = `kakeibo_sync_${new Date().toISOString().slice(0,10)}.csv`;
+        link.download = `kakeibo_${monthLabel}.csv`;
         link.click();
     }
+
+    function cleanEmoji(text) { return text.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim(); }
 
     function showDailyDetail(dateStr) {
         selectedDate = dateStr;
@@ -227,6 +217,7 @@
             document.getElementById('editMemo').value = it.memo;
         } else {
             document.getElementById('editDate').value = selectedDate;
+            document.getElementById('editAcc').value = "楽天カード";
             document.getElementById('editAmount').value = ""; document.getElementById('editMemo').value = "";
         }
         document.getElementById('editModal').style.display = 'block';
@@ -283,43 +274,16 @@
                 const fDate = `${dStr.substring(0,4)}-${dStr.substring(4,6)}-${dStr.substring(6,8)}`;
                 newTransactions.push({ id: Date.now()+i, date: fDate, cat: cols[1], amount: parseInt(cols[2])||0, acc: cols[5], memo: cols[6] });
             }
-            if (newTransactions.length > 0) {
-                transactions = newTransactions;
-                saveToCloud();
-                alert(`${newTransactions.length}件を読み込み同期しました。`);
-            }
+            if (newTransactions.length > 0) { transactions = newTransactions; saveToCloud(); alert(`${newTransactions.length}件を読み込み同期しました。`); }
         };
         reader.readAsText(file);
         input.value = '';
     }
 </script>
 
-<div id="dayModal" class="modal"><div class="modal-content">
-    <h3 class="modal-date"></h3>
-    <button class="btn-add" onclick="openEdit(null)">＋ 新規追加</button>
-    <div id="dailyList" style="max-height:350px; overflow-y:auto; margin:15px 0;"></div>
-    <button class="btn-sub" style="width:100%" onclick="closeModals()">閉じる</button>
-</div></div>
-
-<div id="editModal" class="modal"><div class="modal-content">
-    <h3>収支入力</h3>
-    <input type="date" id="editDate">
-    <select id="editAcc"><option>楽天カード</option><option>PayPay</option><option>現金</option></select>
-    <select id="editCat"></select>
-    <input type="number" id="editAmount" placeholder="金額">
-    <input type="text" id="editMemo" placeholder="メモ">
-    <button class="btn-main" onclick="saveEdit()">保存して同期</button>
-    <button class="btn-sub" style="width:100%; margin-top:5px;" onclick="closeModals()">キャンセル</button>
-</div></div>
-
-<div id="masterModal" class="modal"><div class="modal-content">
-    <h3>カテゴリ設定</h3>
-    <div id="masterList"></div>
-    <div style="display:flex; gap:5px; margin-top:10px;">
-        <input type="text" id="newCatName" placeholder="新しいカテゴリ名"><button class="btn-main" onclick="addCat()">追加</button>
-    </div>
-    <button class="btn-sub" style="width:100%; margin-top:15px;" onclick="closeModals()">完了</button>
-</div></div>
+<div id="dayModal" class="modal"><div class="modal-content"><h3 class="modal-date"></h3><button class="btn-add" onclick="openEdit(null)">＋ 新規追加</button><div id="dailyList" style="max-height:350px; overflow-y:auto; margin:15px 0;"></div><button class="btn-sub" style="width:100%" onclick="closeModals()">閉じる</button></div></div>
+<div id="editModal" class="modal"><div class="modal-content"><h3>収支入力</h3><input type="date" id="editDate"><select id="editAcc"><option>楽天カード</option><option>PayPay</option><option>現金</option></select><select id="editCat"></select><input type="number" id="editAmount" placeholder="金額"><input type="text" id="editMemo" placeholder="メモ"><button class="btn-main" onclick="saveEdit()">保存して同期</button><button class="btn-sub" style="width:100%; margin-top:5px;" onclick="closeModals()">キャンセル</button></div></div>
+<div id="masterModal" class="modal"><div class="modal-content"><h3>カテゴリ設定</h3><div id="masterList"></div><div style="display:flex; gap:5px; margin-top:10px;"><input type="text" id="newCatName" placeholder="新しいカテゴリ名"><button class="btn-main" onclick="addCat()">追加</button></div><button class="btn-sub" style="width:100%; margin-top:15px;" onclick="closeModals()">完了</button></div></div>
 
 </body>
 </html>
