@@ -16,7 +16,21 @@
         .main-layout { display: grid; grid-template-columns: 1fr 320px; gap: 20px; }
         .card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 16px; }
         #calendar { background: white; padding: 10px; border-radius: 12px; min-height: 650px; }
-        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        
+        /* --- カレンダーのドット表示を整える修正 --- */
+        .fc-daygrid-event {
+            background: none !important;
+            border: none !important;
+            justify-content: center !important;
+        }
+        .fc-event-title {
+            font-size: 1.2rem !important; /* ドットの大きさ */
+            font-weight: bold;
+            text-align: center;
+            width: 100%;
+        }
+        /* --- 修正ここまで --- */
+
         .summary-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 20px; }
         .summary-item { padding: 12px; border-radius: 8px; background: #f8f9fa; border-left: 5px solid var(--gray); }
         .summary-item.total { border-left-color: var(--primary); background: #e8f0fe; }
@@ -69,18 +83,16 @@
 </div>
 
 <script>
-    // Firebase Configuration (From your screenshot)
     const firebaseConfig = {
         apiKey: "AIzaSyDaRbw8-5_wcgg0vqhNFsT2tCRGGkoztLo",
         authDomain: "my-kakeibo-app-4eace.firebaseapp.com",
-        databaseURL: "https://my-kakeibo-app-4eace-default-rtdb.firebaseio.com", // 念のため予測値。RealtimeDB作成後に確認してください
+        databaseURL: "https://my-kakeibo-app-4eace-default-rtdb.firebaseio.com",
         projectId: "my-kakeibo-app-4eace",
         storageBucket: "my-kakeibo-app-4eace.firebasestorage.app",
         messagingSenderId: "1063328222498",
         appId: "1:1063328222498:web:4c83a01347c3c9478ce97b"
     };
 
-    // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
@@ -92,9 +104,6 @@
     let selectedDate = "";
     let currentEditId = null;
 
-    // --- Data Sync Logic ---
-
-    // クラウドからデータ取得
     db.ref('kakeibo_data').on('value', (snapshot) => {
         const data = snapshot.val();
         if (data) {
@@ -104,7 +113,6 @@
             document.getElementById('syncIndicator').innerText = "● 同期済み";
             document.getElementById('syncIndicator').style.color = "var(--success)";
         } else {
-            // 初回起動時、何もなければLocalから移行
             const localData = JSON.parse(localStorage.getItem('kakeibo_transactions'));
             if(localData) {
                 transactions = localData;
@@ -122,8 +130,6 @@
         });
     }
 
-    // --- UI Logic ---
-
     document.addEventListener('DOMContentLoaded', function() {
         calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
             initialView: 'dayGridMonth',
@@ -133,18 +139,11 @@
             events: [],
             dateClick: (info) => showDailyDetail(info.dateStr),
             eventClick: (info) => showDailyDetail(info.event.startStr),
-            eventContent: function(arg) {
-                let dot = document.createElement('div');
-                dot.className = 'dot';
-                dot.style.backgroundColor = arg.event.backgroundColor;
-                return { domNodes: [dot] };
-            }
         });
         calendar.render();
     });
 
     function updateUI() {
-        // UI更新処理
         let t=0, r=0, p=0;
         transactions.forEach(d => {
             t += d.amount;
@@ -159,19 +158,29 @@
         calendar.addEventSource(getDotEvents());
     }
 
+    // --- ドット表示のための修正ロジック ---
     function getDotEvents() {
         const dailySummary = {};
         transactions.forEach(t => {
             if (!dailySummary[t.date]) dailySummary[t.date] = { accs: new Set() };
             dailySummary[t.date].accs.add(t.acc);
         });
+
         const events = [];
         for (const date in dailySummary) {
-            let color = '#5f6368';
             const accs = dailySummary[date].accs;
+            let color = '#5f6368';
             if (accs.has('楽天カード')) color = '#bf0000';
             else if (accs.has('PayPay')) color = '#ff4b4b';
-            events.push({ start: date, backgroundColor: color, allDay: true });
+
+            events.push({
+                start: date,
+                title: '●',        // 文字としてドットを表示
+                color: 'transparent', 
+                textColor: color,   // ドットの色
+                allDay: true,
+                display: 'list-item' // これにより点形式になります
+            });
         }
         return events;
     }
