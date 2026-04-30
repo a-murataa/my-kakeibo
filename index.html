@@ -17,7 +17,6 @@
         .card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 16px; }
         #calendar { background: white; padding: 10px; border-radius: 12px; min-height: 650px; }
         
-        /* --- カレンダーの赤ドット表示用CSS --- */
         .fc-daygrid-event { background: none !important; border: none !important; justify-content: center !important; cursor: pointer; }
         .fc-event-title { font-size: 1.2rem !important; color: #ea4335 !important; font-weight: bold; text-align: center; width: 100%; }
 
@@ -47,6 +46,7 @@
         #masterList { max-height: 400px; overflow-y: auto; padding: 10px; border: 1px solid #eee; border-radius: 8px; }
         .daily-item { border-bottom: 1px solid #f1f3f4; padding: 10px 0; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
         .sync-status { font-size: 0.75rem; text-align: center; color: var(--success); margin-top: 5px; }
+        .memo-hint { color: #999; font-style: italic; } /* メモ空欄時のスタイル */
         @media (max-width: 900px) { .main-layout { grid-template-columns: 1fr; } }
     </style>
 </head>
@@ -79,7 +79,7 @@
                 </div>
                 <div id="syncIndicator" class="sync-status">● クラウドと同期中</div>
             </div>
-            <div class="card"><p style="margin:0; font-size:0.85rem; color:var(--gray);">金額クリックで内訳を確認できます。</p></div>
+            <div class="card"><p style="margin:0; font-size:0.85rem; color:var(--gray);">メモが空欄の場合、カテゴリ名が自動表示されます。</p></div>
         </div>
     </div>
 </div>
@@ -168,13 +168,18 @@
         }));
     }
 
-    // アカウント別（楽天・PayPay・現金）の内訳表示
+    // 表示用のメモを取得（空欄ならカテゴリ名を返す）
+    function getDisplayMemo(item) {
+        if (item.memo && item.memo.trim() !== "") {
+            return item.memo;
+        }
+        return `<span class="memo-hint">${item.cat}</span>`;
+    }
+
     function openAccountSummary(accName) {
         const currentViewDate = calendar.getDate();
         const viewYear = currentViewDate.getFullYear();
         const viewMonth = currentViewDate.getMonth();
-        
-        // 昇順（1日→31日）にソート
         const monthAccData = transactions.filter(d => {
             const dDate = new Date(d.date);
             return dDate.getFullYear() === viewYear && dDate.getMonth() === viewMonth && d.acc === accName;
@@ -183,11 +188,10 @@
         document.getElementById('catSummaryTitle').innerText = `${viewMonth + 1}月の${accName}明細`;
         document.getElementById('catSummaryList').innerHTML = monthAccData.map(item => `
             <div class="daily-item" onclick="openEdit(${item.id})">
-                <div style="font-size:0.9rem;"><strong>${item.date.split('-')[2]}日: ${item.memo || '(無題)'}</strong><br><small>${item.cat}</small></div>
+                <div style="font-size:0.9rem;"><strong>${item.date.split('-')[2]}日: ${getDisplayMemo(item)}</strong><br><small>${item.cat}</small></div>
                 <div style="font-weight:bold;">¥${item.amount.toLocaleString()}</div>
             </div>
         `).join('') || '<p style="text-align:center; padding:20px; color:#999;">データがありません</p>';
-        
         document.getElementById('categorySummaryModal').style.display = 'block';
     }
 
@@ -208,7 +212,6 @@
         const sortedCats = Object.entries(catAgg).sort((a,b) => b[1].total - a[1].total);
         document.getElementById('catSummaryTitle').innerText = `${viewMonth + 1}月のカテゴリ別集計`;
         document.getElementById('catSummaryList').innerHTML = sortedCats.map(([cat, data], index) => {
-            // 各カテゴリの中の明細も日付順にソート
             const sortedItems = data.items.sort((a,b) => new Date(a.date) - new Date(b.date));
             return `
                 <div class="cat-item" onclick="toggleCatDetail(${index})">
@@ -216,7 +219,7 @@
                     <div id="cat-detail-${index}" class="cat-details">
                         ${sortedItems.map(item => `
                             <div class="daily-item" onclick="event.stopPropagation(); openEdit(${item.id})">
-                                <span>${item.date.split('-')[2]}日: ${item.memo || '(無題)'}</span>
+                                <span>${item.date.split('-')[2]}日: ${getDisplayMemo(item)}</span>
                                 <span>¥${item.amount.toLocaleString()}</span>
                             </div>
                         `).join('')}
@@ -237,7 +240,9 @@
         const viewYear = currentViewDate.getFullYear();
         const viewMonth = currentViewDate.getMonth();
         const monthLabel = `${viewYear}${String(viewMonth + 1).padStart(2, '0')}`;
-        let csv = "\uFEFF日付,カテゴリ,金額,通貨,対象者,アカウント,メモ,収支区分\n";
+        
+        // 列名に「大分類」を追加
+        let csv = "\uFEFF日付,カテゴリ,大分類,金額,通貨,対象者,アカウント,メモ,収支区分\n";
         const filtered = transactions.filter(d => {
             const dDate = new Date(d.date);
             return dDate.getFullYear() === viewYear && dDate.getMonth() === viewMonth;
@@ -245,7 +250,8 @@
         if (filtered.length === 0) { alert("この月のデータはありません。"); return; }
         filtered.forEach(d => {
             const cleanCat = cleanEmoji(d.cat);
-            csv += `${d.date.replace(/-/g, '')},${cleanCat},${d.amount},JPY,本人,${d.acc},${d.memo},支\n`;
+            // カテゴリと金額の間に「支出」を固定で挿入
+            csv += `${d.date.replace(/-/g, '')},${cleanCat},支出,${d.amount},JPY,本人,${d.acc},${d.memo},支\n`;
         });
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
@@ -262,7 +268,7 @@
         const dayData = transactions.filter(t => t.date === dateStr);
         document.getElementById('dailyList').innerHTML = dayData.map(t => `
             <div class="daily-item" onclick="openEdit(${t.id})">
-                <div style="font-size:0.9rem;"><strong>${t.memo || '店舗不明'}</strong><br><small>${t.acc} / ${t.cat}</small></div>
+                <div style="font-size:0.9rem;"><strong>${getDisplayMemo(t)}</strong><br><small>${t.acc} / ${t.cat}</small></div>
                 <div style="font-weight:bold;">¥${t.amount.toLocaleString()}</div>
             </div>
         `).join('') || '<p style="text-align:center; color:#999; padding:20px;">記録なし</p>';
@@ -344,10 +350,10 @@
             for (let i = 1; i < lines.length; i++) {
                 if (!lines[i].trim()) continue;
                 const cols = lines[i].split(',');
-                if (cols.length < 7) continue;
+                if (cols.length < 8) continue; // 列数チェック（大分類含め）
                 const dStr = cols[0];
                 const fDate = `${dStr.substring(0,4)}-${dStr.substring(4,6)}-${dStr.substring(6,8)}`;
-                newTransactions.push({ id: Date.now()+i, date: fDate, cat: cols[1], amount: parseInt(cols[2])||0, acc: cols[5], memo: cols[6] });
+                newTransactions.push({ id: Date.now()+i, date: fDate, cat: cols[1], amount: parseInt(cols[3])||0, acc: cols[6], memo: cols[7] });
             }
             if (newTransactions.length > 0) { transactions = newTransactions; saveToCloud(); alert(`${newTransactions.length}件を読み込み同期しました。`); }
         };
