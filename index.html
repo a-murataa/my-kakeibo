@@ -79,7 +79,6 @@
                 </div>
                 <div id="syncIndicator" class="sync-status">● クラウドと同期中</div>
             </div>
-            <div class="card"><p style="margin:0; font-size:0.85rem; color:var(--gray);">カテゴリをメインに、支払い方法とメモを表示します。</p></div>
         </div>
     </div>
 </div>
@@ -168,7 +167,6 @@
         }));
     }
 
-    // 補足行の表示を作成（支払い方法 + メモ）
     function getSubLine(item) {
         const memoText = (item.memo && item.memo.trim() !== "") ? item.memo : `${item.cat} (自動補完)`;
         return `<span class="memo-hint">${item.acc} / ${memoText}</span>`;
@@ -244,6 +242,7 @@
         const viewYear = currentViewDate.getFullYear();
         const viewMonth = currentViewDate.getMonth();
         const monthLabel = `${viewYear}${String(viewMonth + 1).padStart(2, '0')}`;
+        // 大分類列は空欄にする
         let csv = "\uFEFF日付,カテゴリ,大分類,金額,通貨,対象者,アカウント,メモ,収支区分\n";
         const filtered = transactions.filter(d => {
             const dDate = new Date(d.date);
@@ -252,7 +251,8 @@
         if (filtered.length === 0) { alert("この月のデータはありません。"); return; }
         filtered.forEach(d => {
             const cleanCat = cleanEmoji(d.cat);
-            csv += `${d.date.replace(/-/g, '')},${cleanCat},支出,${d.amount},JPY,本人,${d.acc},${d.memo},支\n`;
+            // 大分類の位置（3列目）を空（,,）にする
+            csv += `${d.date.replace(/-/g, '')},${cleanCat},,${d.amount},JPY,本人,${d.acc},${d.memo},支\n`;
         });
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
