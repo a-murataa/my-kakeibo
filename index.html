@@ -174,10 +174,11 @@
         const viewYear = currentViewDate.getFullYear();
         const viewMonth = currentViewDate.getMonth();
         
+        // 昇順（1日→31日）にソート
         const monthAccData = transactions.filter(d => {
             const dDate = new Date(d.date);
             return dDate.getFullYear() === viewYear && dDate.getMonth() === viewMonth && d.acc === accName;
-        }).sort((a,b) => new Date(b.date) - new Date(a.date));
+        }).sort((a,b) => new Date(a.date) - new Date(b.date));
 
         document.getElementById('catSummaryTitle').innerText = `${viewMonth + 1}月の${accName}明細`;
         document.getElementById('catSummaryList').innerHTML = monthAccData.map(item => `
@@ -206,19 +207,23 @@
         });
         const sortedCats = Object.entries(catAgg).sort((a,b) => b[1].total - a[1].total);
         document.getElementById('catSummaryTitle').innerText = `${viewMonth + 1}月のカテゴリ別集計`;
-        document.getElementById('catSummaryList').innerHTML = sortedCats.map(([cat, data], index) => `
-            <div class="cat-item" onclick="toggleCatDetail(${index})">
-                <div class="cat-row"><span>${cat}</span><span>¥${data.total.toLocaleString()}</span></div>
-                <div id="cat-detail-${index}" class="cat-details">
-                    ${data.items.map(item => `
-                        <div class="daily-item" onclick="event.stopPropagation(); openEdit(${item.id})">
-                            <span>${item.date.split('-')[2]}日: ${item.memo || '(無題)'}</span>
-                            <span>¥${item.amount.toLocaleString()}</span>
-                        </div>
-                    `).join('')}
+        document.getElementById('catSummaryList').innerHTML = sortedCats.map(([cat, data], index) => {
+            // 各カテゴリの中の明細も日付順にソート
+            const sortedItems = data.items.sort((a,b) => new Date(a.date) - new Date(b.date));
+            return `
+                <div class="cat-item" onclick="toggleCatDetail(${index})">
+                    <div class="cat-row"><span>${cat}</span><span>¥${data.total.toLocaleString()}</span></div>
+                    <div id="cat-detail-${index}" class="cat-details">
+                        ${sortedItems.map(item => `
+                            <div class="daily-item" onclick="event.stopPropagation(); openEdit(${item.id})">
+                                <span>${item.date.split('-')[2]}日: ${item.memo || '(無題)'}</span>
+                                <span>¥${item.amount.toLocaleString()}</span>
+                            </div>
+                        `).join('')}
+                    </div>
                 </div>
-            </div>
-        `).join('') || '<p style="text-align:center; padding:20px; color:#999;">データがありません</p>';
+            `;
+        }).join('') || '<p style="text-align:center; padding:20px; color:#999;">データがありません</p>';
         document.getElementById('categorySummaryModal').style.display = 'block';
     }
 
@@ -267,7 +272,7 @@
     function openEdit(id) {
         currentEditId = id;
         document.getElementById('editCat').innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
-        document.getElementById('deleteBtn').style.display = id ? 'block' : 'none'; // 編集時のみ削除ボタン表示
+        document.getElementById('deleteBtn').style.display = id ? 'block' : 'none';
         if(id) {
             const it = transactions.find(t => t.id === id);
             document.getElementById('editDate').value = it.date;
