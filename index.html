@@ -18,23 +18,13 @@
         #calendar { background: white; padding: 10px; border-radius: 12px; min-height: 650px; }
         
         /* --- カレンダーの赤ドット表示用CSS --- */
-        .fc-daygrid-event {
-            background: none !important;
-            border: none !important;
-            justify-content: center !important;
-            cursor: pointer;
-        }
-        .fc-event-title {
-            font-size: 1.2rem !important;
-            color: #ea4335 !important; 
-            font-weight: bold;
-            text-align: center;
-            width: 100%;
-        }
+        .fc-daygrid-event { background: none !important; border: none !important; justify-content: center !important; cursor: pointer; }
+        .fc-event-title { font-size: 1.2rem !important; color: #ea4335 !important; font-weight: bold; text-align: center; width: 100%; }
 
         .summary-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 20px; }
-        .summary-item { padding: 12px; border-radius: 8px; background: #f8f9fa; border-left: 5px solid var(--gray); }
-        .summary-item.total { border-left-color: var(--primary); background: #e8f0fe; }
+        .summary-item { padding: 12px; border-radius: 8px; background: #f8f9fa; border-left: 5px solid var(--gray); cursor: pointer; transition: background 0.2s; }
+        .summary-item:hover { background: #f1f3f4; }
+        .summary-item.total { border-left-color: var(--primary); background: #e8f0fe; cursor: default; }
         .summary-item.rakuten { border-left-color: #bf0000; }
         .summary-item.paypay { border-left-color: #ff4b4b; }
         .summary-item.cash { border-left-color: #5f6368; }
@@ -44,14 +34,13 @@
         button { padding: 10px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.9rem; }
         .btn-main { background: var(--primary); color: white; width: 100%; }
         .btn-sub { background: white; color: var(--gray); border: 1px solid #dadce0; }
+        .btn-danger { background: var(--danger); color: white; }
         .btn-add { background: var(--success); color: white; width: 100%; margin-top: 10px; }
         .modal { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
         .modal-content { background: white; margin: 5% auto; padding: 24px; border-radius: 16px; width: 90%; max-width: 450px; }
         input, select { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #dadce0; border-radius: 8px; box-sizing: border-box; }
         
-        /* カテゴリ集計用スタイル */
         .cat-item { border-bottom: 1px solid #eee; padding: 12px 5px; cursor: pointer; }
-        .cat-item:hover { background: #f9f9f9; }
         .cat-row { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
         .cat-details { background: #fcfcfc; margin-top: 8px; padding: 5px; border-radius: 4px; display: none; font-size: 0.85rem; font-weight: normal; }
         
@@ -78,9 +67,9 @@
         <div class="side-panel">
             <div class="card summary-grid">
                 <div class="summary-item total"><span class="summary-label" id="summary-month-label">今月の総支出</span><span id="total-amount" class="summary-value">¥0</span></div>
-                <div class="summary-item rakuten"><span class="summary-label">楽天カード</span><span id="rakuten-total" class="summary-value">¥0</span></div>
-                <div class="summary-item paypay"><span class="summary-label">PayPay</span><span id="paypay-total" class="summary-value">¥0</span></div>
-                <div class="summary-item cash"><span class="summary-label">現金</span><span id="cash-total" class="summary-value">¥0</span></div>
+                <div class="summary-item rakuten" onclick="openAccountSummary('楽天カード')"><span class="summary-label">楽天カード</span><span id="rakuten-total" class="summary-value">¥0</span></div>
+                <div class="summary-item paypay" onclick="openAccountSummary('PayPay')"><span class="summary-label">PayPay</span><span id="paypay-total" class="summary-value">¥0</span></div>
+                <div class="summary-item cash" onclick="openAccountSummary('現金')"><span class="summary-label">現金</span><span id="cash-total" class="summary-value">¥0</span></div>
                 
                 <button class="btn-main" style="background:#673ab7; margin-top:5px;" onclick="openCategorySummary()">📊 カテゴリ別集計</button>
 
@@ -90,7 +79,7 @@
                 </div>
                 <div id="syncIndicator" class="sync-status">● クラウドと同期中</div>
             </div>
-            <div class="card"><p style="margin:0; font-size:0.85rem; color:var(--gray);">PCで入力した内容は、スマホの同じURLに自動で反映されます。</p></div>
+            <div class="card"><p style="margin:0; font-size:0.85rem; color:var(--gray);">金額クリックで内訳を確認できます。</p></div>
         </div>
     </div>
 </div>
@@ -179,33 +168,47 @@
         }));
     }
 
-    // カテゴリ別集計モーダルを開く
-    function openCategorySummary() {
+    // アカウント別（楽天・PayPay・現金）の内訳表示
+    function openAccountSummary(accName) {
         const currentViewDate = calendar.getDate();
         const viewYear = currentViewDate.getFullYear();
         const viewMonth = currentViewDate.getMonth();
         
+        const monthAccData = transactions.filter(d => {
+            const dDate = new Date(d.date);
+            return dDate.getFullYear() === viewYear && dDate.getMonth() === viewMonth && d.acc === accName;
+        }).sort((a,b) => new Date(b.date) - new Date(a.date));
+
+        document.getElementById('catSummaryTitle').innerText = `${viewMonth + 1}月の${accName}明細`;
+        document.getElementById('catSummaryList').innerHTML = monthAccData.map(item => `
+            <div class="daily-item" onclick="openEdit(${item.id})">
+                <div style="font-size:0.9rem;"><strong>${item.date.split('-')[2]}日: ${item.memo || '(無題)'}</strong><br><small>${item.cat}</small></div>
+                <div style="font-weight:bold;">¥${item.amount.toLocaleString()}</div>
+            </div>
+        `).join('') || '<p style="text-align:center; padding:20px; color:#999;">データがありません</p>';
+        
+        document.getElementById('categorySummaryModal').style.display = 'block';
+    }
+
+    function openCategorySummary() {
+        const currentViewDate = calendar.getDate();
+        const viewYear = currentViewDate.getFullYear();
+        const viewMonth = currentViewDate.getMonth();
         const monthData = transactions.filter(d => {
             const dDate = new Date(d.date);
             return dDate.getFullYear() === viewYear && dDate.getMonth() === viewMonth;
         });
-
         const catAgg = {};
         monthData.forEach(d => {
             if(!catAgg[d.cat]) catAgg[d.cat] = { total: 0, items: [] };
             catAgg[d.cat].total += d.amount;
             catAgg[d.cat].items.push(d);
         });
-
         const sortedCats = Object.entries(catAgg).sort((a,b) => b[1].total - a[1].total);
-
         document.getElementById('catSummaryTitle').innerText = `${viewMonth + 1}月のカテゴリ別集計`;
         document.getElementById('catSummaryList').innerHTML = sortedCats.map(([cat, data], index) => `
             <div class="cat-item" onclick="toggleCatDetail(${index})">
-                <div class="cat-row">
-                    <span>${cat}</span>
-                    <span>¥${data.total.toLocaleString()}</span>
-                </div>
+                <div class="cat-row"><span>${cat}</span><span>¥${data.total.toLocaleString()}</span></div>
                 <div id="cat-detail-${index}" class="cat-details">
                     ${data.items.map(item => `
                         <div class="daily-item" onclick="event.stopPropagation(); openEdit(${item.id})">
@@ -216,7 +219,6 @@
                 </div>
             </div>
         `).join('') || '<p style="text-align:center; padding:20px; color:#999;">データがありません</p>';
-        
         document.getElementById('categorySummaryModal').style.display = 'block';
     }
 
@@ -265,6 +267,7 @@
     function openEdit(id) {
         currentEditId = id;
         document.getElementById('editCat').innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+        document.getElementById('deleteBtn').style.display = id ? 'block' : 'none'; // 編集時のみ削除ボタン表示
         if(id) {
             const it = transactions.find(t => t.id === id);
             document.getElementById('editDate').value = it.date;
@@ -293,10 +296,18 @@
             transactions[i] = { id: currentEditId, ...d };
         } else { transactions.push({ id: Date.now(), ...d }); }
         saveToCloud();
-        
-        // モーダルを閉じ、UIを更新
         closeModals();
         if(selectedDate) showDailyDetail(d.date); 
+    }
+
+    function deleteTransaction() {
+        if(!currentEditId) return;
+        if(confirm("このデータを削除してもよろしいですか？")) {
+            transactions = transactions.filter(t => t.id !== currentEditId);
+            saveToCloud();
+            closeModals();
+            if(selectedDate) showDailyDetail(selectedDate);
+        }
     }
 
     function openMaster() {
@@ -342,7 +353,13 @@
 
 <div id="categorySummaryModal" class="modal"><div class="modal-content"><h3 id="catSummaryTitle"></h3><div id="catSummaryList" style="max-height:450px; overflow-y:auto; margin:15px 0;"></div><button class="btn-sub" style="width:100%" onclick="closeModals()">閉じる</button></div></div>
 <div id="dayModal" class="modal"><div class="modal-content"><h3 class="modal-date"></h3><button class="btn-add" onclick="openEdit(null)">＋ 新規追加</button><div id="dailyList" style="max-height:350px; overflow-y:auto; margin:15px 0;"></div><button class="btn-sub" style="width:100%" onclick="closeModals()">閉じる</button></div></div>
-<div id="editModal" class="modal"><div class="modal-content"><h3>収支入力</h3><input type="date" id="editDate"><select id="editAcc"><option>楽天カード</option><option>PayPay</option><option>現金</option></select><select id="editCat"></select><input type="number" id="editAmount" placeholder="金額"><input type="text" id="editMemo" placeholder="メモ"><button class="btn-main" onclick="saveEdit()">保存して同期</button><button class="btn-sub" style="width:100%; margin-top:5px;" onclick="closeModals()">キャンセル</button></div></div>
+<div id="editModal" class="modal"><div class="modal-content"><h3>収支入力</h3><input type="date" id="editDate"><select id="editAcc"><option>楽天カード</option><option>PayPay</option><option>現金</option></select><select id="editCat"></select><input type="number" id="editAmount" placeholder="金額"><input type="text" id="editMemo" placeholder="メモ">
+    <div style="display:flex; gap:10px; margin-top:10px;">
+        <button id="deleteBtn" class="btn-danger" style="flex:1;" onclick="deleteTransaction()">削除</button>
+        <button class="btn-main" style="flex:2;" onclick="saveEdit()">保存して同期</button>
+    </div>
+    <button class="btn-sub" style="width:100%; margin-top:5px;" onclick="closeModals()">キャンセル</button>
+</div></div>
 <div id="masterModal" class="modal"><div class="modal-content"><h3>カテゴリ設定</h3><div id="masterList"></div><div style="display:flex; gap:5px; margin-top:10px;"><input type="text" id="newCatName" placeholder="新しいカテゴリ名"><button class="btn-main" onclick="addCat()">追加</button></div><button class="btn-sub" style="width:100%; margin-top:15px;" onclick="closeModals()">完了</button></div></div>
 
 </body>
