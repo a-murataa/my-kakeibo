@@ -46,7 +46,7 @@
         #masterList { max-height: 400px; overflow-y: auto; padding: 10px; border: 1px solid #eee; border-radius: 8px; }
         .daily-item { border-bottom: 1px solid #f1f3f4; padding: 10px 0; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
         .sync-status { font-size: 0.75rem; text-align: center; color: var(--success); margin-top: 5px; }
-        .memo-hint { color: #888; font-style: italic; font-size: 0.8rem; }
+        .memo-hint { color: #888; font-size: 0.8rem; }
         @media (max-width: 900px) { .main-layout { grid-template-columns: 1fr; } }
     </style>
 </head>
@@ -79,7 +79,7 @@
                 </div>
                 <div id="syncIndicator" class="sync-status">● クラウドと同期中</div>
             </div>
-            <div class="card"><p style="margin:0; font-size:0.85rem; color:var(--gray);">カテゴリを優先表示するように変更しました。</p></div>
+            <div class="card"><p style="margin:0; font-size:0.85rem; color:var(--gray);">カテゴリをメインに、支払い方法とメモを表示します。</p></div>
         </div>
     </div>
 </div>
@@ -168,12 +168,10 @@
         }));
     }
 
-    // メモ表示用：空ならカテゴリ名、あればメモをグレーで返す
-    function getMemoPart(item) {
-        if (item.memo && item.memo.trim() !== "") {
-            return `<span class="memo-hint">${item.memo}</span>`;
-        }
-        return `<span class="memo-hint">${item.cat} (自動補完)</span>`;
+    // 補足行の表示を作成（支払い方法 + メモ）
+    function getSubLine(item) {
+        const memoText = (item.memo && item.memo.trim() !== "") ? item.memo : `${item.cat} (自動補完)`;
+        return `<span class="memo-hint">${item.acc} / ${memoText}</span>`;
     }
 
     function openAccountSummary(accName) {
@@ -190,7 +188,7 @@
             <div class="daily-item" onclick="openEdit(${item.id})">
                 <div style="font-size:0.9rem;">
                     <strong>${item.date.split('-')[2]}日: ${item.cat}</strong><br>
-                    ${getMemoPart(item)}
+                    ${getSubLine(item)}
                 </div>
                 <div style="font-weight:bold;">¥${item.amount.toLocaleString()}</div>
             </div>
@@ -224,7 +222,7 @@
                             <div class="daily-item" onclick="event.stopPropagation(); openEdit(${item.id})">
                                 <div>
                                     <strong>${item.date.split('-')[2]}日</strong><br>
-                                    ${getMemoPart(item)}
+                                    ${getSubLine(item)}
                                 </div>
                                 <span>¥${item.amount.toLocaleString()}</span>
                             </div>
@@ -273,7 +271,7 @@
             <div class="daily-item" onclick="openEdit(${t.id})">
                 <div style="font-size:0.9rem;">
                     <strong>${t.cat}</strong><br>
-                    ${getMemoPart(t)}
+                    ${getSubLine(t)}
                 </div>
                 <div style="font-weight:bold;">¥${t.amount.toLocaleString()}</div>
             </div>
