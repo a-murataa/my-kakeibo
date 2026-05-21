@@ -55,10 +55,13 @@
 <div class="container">
     <header>
         <h1>🏠 我が家の家計簿 Pro+</h1>
-        <div style="display:flex; gap:10px;">
-            <input type="file" id="csvFile" accept=".csv" style="display:none" onchange="uploadCSV(this)">
-            <button class="btn-sub" onclick="document.getElementById('csvFile').click()">📥 CSV読込</button>
-            <button class="btn-sub" onclick="downloadCSV()">📤 CSV保存</button>
+        <div style="display:flex; gap:10px; align-items: center;">
+            <input type="file" id="rakutenFile" accept=".csv" style="display:none" onchange="importCSV(this, '楽天カード')">
+            <input type="file" id="paypayFile" accept=".csv" style="display:none" onchange="importCSV(this, 'PayPay')">
+            
+            <button class="btn-sub" style="border-color: #bf0000; color: #bf0000;" onclick="document.getElementById('rakutenFile').click()">📥 楽天CSV読込</button>
+            <button class="btn-sub" style="border-color: #ff4b4b; color: #ff4b4b;" onclick="document.getElementById('paypayFile').click()">📥 PayPayCSV読込</button>
+            <button class="btn-main" style="background: var(--success);" onclick="downloadCSV()">📤 1つに統合してCSV保存</button>
         </div>
     </header>
 
@@ -97,7 +100,7 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    let categories = ["✨ 未分類", "🍴 食費", "🛒 日用品", "👔 パパ小遣い", "💊 医療費", "👶 オムツ", "🛡️ 保険", "📱 通信費", "🚗 車ローン", "🎓 学用品", "🏠 住宅ローン", "💡 電気ガス", "👗 衣服", "🎁 交際費", "✈️ 特別な支出", "💰 税金", "🧒 子供自由費", "🚃 交通費", "🚰 水道", "📈 iDeCo", "💇 美容院", "🏫 保育料", "🏊 スイミング", "📝 公文", "⛽ ガソリン", "🍺 酒代", "☕ コーヒー代", "🏦 貯蓄", "🍱 外食", "💳 父支払い", "👩 ママお小遣い", "🎫 父Suica", "🔄 サブスク", "📦 ふるさと納税", "🚨 予備費or緊急", "🎁 プレゼント", "🎍 お正月", "🚄 帰省", "🏘️ 自治会費", "🛠️ カインズ", "🔧 車修理", "🏗️ 建て替え", "📺 家電大物", "👛 やりくり費", "🥃 ウイスキー", "🧳 旅行"];
+    let categories = ["✨ 未分類", "🍴 食費", "🛒 日用品", "👔 パパ小遣い", "💊 医療費", "👶 オムツ", "🛡️ 保険", "📱 通信費", "🚗 車ローン", "🎓 学用品", "🏠 住宅ローン", "💡 電気ガス", "👑 衣服", "🎁 交際費", "✈️ 特別な支出", "💰 税金", "🧒 子供自由費", "🚃 交通費", "🚰 水道", "📈 iDeCo", "💇 美容院", "🏫 保育料", "🏊 スイミング", "📝 公文", "⛽ ガソリン", "🍺 酒代", "☕ コーヒー代", "🏦 貯蓄", "🍱 外食", "💳 父支払い", "👩 ママお小遣い", "🎫 父Suica", "🔄 サブスク", "📦 ふるさと納税", "🚨 予備費or緊急", "🎁 プレゼント", "🎍 お正月", "🚄 帰省", "🏘️ 自治会費", "🛠️ カインズ", "🔧 車修理", "🏗️ 建て替え", "📺 家電大物", "👛 やりくり費", "🥃 ウイスキー", "🧳 旅行"];
     let transactions = [];
     let calendar;
     let selectedDate = "";
@@ -172,6 +175,176 @@
         return `<span class="memo-hint">${item.acc} / ${memoText}</span>`;
     }
 
+    // ==========================================
+    // ⭐ CSVインポート機能（ここを大幅改修）
+    // ==========================================
+    function autoCategorize(memo) {
+        const m = String(memo).toLowerCase();
+        if (m.includes('amazon')) return "🛒 日用品";
+        if (m.includes('セブン') || m.includes('ﾛｰｿﾝ') || m.includes('ﾌｧﾐﾘｰﾏｰﾄ') || m.includes('ローソン')) return "👔 パパ小遣い";
+        if (m.includes('ベイシア') || m.includes('カスミ') || m.includes('ｷﾞﾖｳﾑｽ-ﾊﾟ-')) return "🍴 食費";
+        if (m.includes('カインズ')) return "🛠️ カインズ";
+        if (m.includes('ヤックス')) return "💊 医療費";
+        return "✨ 未分類";
+    }
+
+    function parseCSVLine(line) {
+        const result = [];
+        let insideQuote = false;
+        let entry = "";
+        for (let i = 0; i < line.length; i++) {
+            let char = line[i];
+            if (char === '"') {
+                insideQuote = !insideQuote;
+            } else if (char === ',' && !insideQuote) {
+                result.push(entry.trim().replace(/^"|"$/g, ''));
+                entry = "";
+            } else {
+                entry += char;
+            }
+        }
+        result.push(entry.trim().replace(/^"|"$/g, ''));
+        return result;
+    }
+
+    function importCSV(input, accountType) {
+        const file = input.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const text = e.target.result;
+            const lines = text.split(/\r?\n/);
+            if(lines.length < 2) return;
+
+            // ヘッダー行の解析
+            const headers = parseCSVLine(lines[0]);
+            
+            let dateIdx = -1, amountIdx = -1, memoIdx = -1;
+
+            if (accountType === '楽天カード') {
+                dateIdx = headers.findIndex(h => h.includes('利用日'));
+                amountIdx = headers.findIndex(h => h.includes('支払総額') || h.includes('利用金額'));
+                memoIdx = headers.findIndex(h => h.includes('利用店名'));
+            } else if (accountType === 'PayPay') {
+                dateIdx = headers.findIndex(h => h.includes('利用日') || h.includes('日時'));
+                amountIdx = headers.findIndex(h => h.includes('支払総額') || h.includes('利用金額'));
+                memoIdx = headers.findIndex(h => h.includes('利用店名'));
+            }
+
+            // 万が一見つからなかった場合のデフォルト位置フォールバック
+            if(dateIdx === -1) dateIdx = 0;
+            if(amountIdx === -1) amountIdx = 5;
+            if(memoIdx === -1) memoIdx = 1;
+
+            let addedCount = 0;
+            
+            // 既存のトランザクションから、他のアカウントのデータや別月のデータを保護しつつマージ
+            let tempTransactions = [...transactions];
+
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                const cols = parseCSVLine(lines[i]);
+                if (cols.length <= Math.max(dateIdx, amountIdx, memoIdx)) continue;
+
+                let rawDate = cols[dateIdx];
+                let rawAmount = cols[amountIdx].replace(/,/g, '');
+                let memo = cols[memoIdx];
+
+                if(!rawDate || !rawAmount) continue;
+
+                // 日付のフォーマット一元化 (YYYY-MM-DD)
+                let formattedDate = "";
+                if(rawDate.includes('/')) {
+                    const parts = rawDate.split('/');
+                    formattedDate = `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`;
+                } else if (rawDate.includes('-')) {
+                    formattedDate = rawDate;
+                } else if (rawDate.length === 8) {
+                    formattedDate = `${rawDate.substring(0,4)}-${rawDate.substring(4,6)}-${rawDate.substring(6,8)}`;
+                } else {
+                    continue;
+                }
+
+                let amount = parseInt(rawAmount) || 0;
+                if(amount === 0) continue; // 0円やつはスキップ
+
+                // 重複チェック (同一日、同一金額、同一店名、同一アカウントは二重取り込みしない)
+                const isDuplicate = tempTransactions.some(t => 
+                    t.date === formattedDate && t.amount === amount && t.memo === memo && t.acc === accountType
+                );
+
+                if (!isDuplicate) {
+                    const category = autoCategorize(memo);
+                    tempTransactions.push({
+                        id: Date.now() + i + Math.floor(Math.random() * 1000),
+                        date: formattedDate,
+                        cat: category,
+                        amount: amount,
+                        acc: accountType,
+                        memo: memo
+                    });
+                    addedCount++;
+                }
+            }
+
+            if (addedCount > 0) {
+                transactions = tempTransactions;
+                saveToCloud();
+                updateUI();
+                alert(`${accountType}の明細から新たに ${addedCount} 件のデータを取り込み同期しました！`);
+            } else {
+                alert("新しい未登録の明細は見つかりませんでした。（すべて登録済みです）");
+            }
+        };
+
+        // 楽天CSV(Shift-JIS)とPayPay(UTF-8)でエンコードを賢く自動選択
+        if(accountType === '楽天カード') {
+            reader.readAsText(file, 'shift_jis');
+        } else {
+            reader.readAsText(file, 'utf-8');
+        }
+        input.value = '';
+    }
+
+    // ==========================================
+    // 📤 1つの家計簿CSVフォーマットとして出力
+    // ==========================================
+    function downloadCSV() {
+        const currentViewDate = calendar.getDate();
+        const viewYear = currentViewDate.getFullYear();
+        const viewMonth = currentViewDate.getMonth();
+        const monthLabel = `${viewYear}${String(viewMonth + 1).padStart(2, '0')}`;
+        
+        // ヘッダー定義（大分類は空）
+        let csv = "\uFEFF日付,カテゴリ,大分類,金額,通貨,対象者,アカウント,メモ,収支区分\n";
+        
+        const filtered = transactions.filter(d => {
+            const dDate = new Date(d.date);
+            return dDate.getFullYear() === viewYear && dDate.getMonth() === viewMonth;
+        }).sort((a, b) => new Date(a.date) - new Date(b.date));
+        
+        if (filtered.length === 0) { alert("表示中カレンダーの月のデータはありません。"); return; }
+        
+        filtered.forEach(d => {
+            const cleanCat = cleanEmoji(d.cat);
+            const cleanDate = d.date.replace(/-/g, '');
+            // 大分類の位置（3列目）を空（,,）にする
+            csv += `${cleanDate},${cleanCat},,${d.amount},JPY,本人,${d.acc},${d.memo},支\n`;
+        });
+        
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `combined_kakeibo_${monthLabel}.csv`;
+        link.click();
+    }
+
+    function cleanEmoji(text) { return text.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim(); }
+
+    // ==========================================
+    // 既存UI制御用関数群
+    // ==========================================
     function openAccountSummary(accName) {
         const currentViewDate = calendar.getDate();
         const viewYear = currentViewDate.getFullYear();
@@ -237,32 +410,6 @@
         el.style.display = el.style.display === 'block' ? 'none' : 'block';
     }
 
-    function downloadCSV() {
-        const currentViewDate = calendar.getDate();
-        const viewYear = currentViewDate.getFullYear();
-        const viewMonth = currentViewDate.getMonth();
-        const monthLabel = `${viewYear}${String(viewMonth + 1).padStart(2, '0')}`;
-        // 大分類列は空欄にする
-        let csv = "\uFEFF日付,カテゴリ,大分類,金額,通貨,対象者,アカウント,メモ,収支区分\n";
-        const filtered = transactions.filter(d => {
-            const dDate = new Date(d.date);
-            return dDate.getFullYear() === viewYear && dDate.getMonth() === viewMonth;
-        });
-        if (filtered.length === 0) { alert("この月のデータはありません。"); return; }
-        filtered.forEach(d => {
-            const cleanCat = cleanEmoji(d.cat);
-            // 大分類の位置（3列目）を空（,,）にする
-            csv += `${d.date.replace(/-/g, '')},${cleanCat},,${d.amount},JPY,本人,${d.acc},${d.memo},支\n`;
-        });
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = `kakeibo_${monthLabel}.csv`;
-        link.click();
-    }
-
-    function cleanEmoji(text) { return text.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim(); }
-
     function showDailyDetail(dateStr) {
         selectedDate = dateStr;
         document.querySelectorAll('.modal-date').forEach(el => el.innerText = dateStr.replace(/-/g, '/'));
@@ -293,6 +440,7 @@
         } else {
             document.getElementById('editDate').value = selectedDate;
             document.getElementById('editAcc').value = "楽天カード";
+            document.getElementById('editCat').value = "✨ 未分類";
             document.getElementById('editAmount').value = ""; document.getElementById('editMemo').value = "";
         }
         document.getElementById('editModal').style.display = 'block';
@@ -342,28 +490,6 @@
     }
 
     function closeModals() { document.querySelectorAll('.modal').forEach(m => m.style.display = 'none'); }
-
-    function uploadCSV(input) {
-        const file = input.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            const text = e.target.result;
-            const lines = text.split('\n');
-            const newTransactions = [];
-            for (let i = 1; i < lines.length; i++) {
-                if (!lines[i].trim()) continue;
-                const cols = lines[i].split(',');
-                if (cols.length < 8) continue;
-                const dStr = cols[0];
-                const fDate = `${dStr.substring(0,4)}-${dStr.substring(4,6)}-${dStr.substring(6,8)}`;
-                newTransactions.push({ id: Date.now()+i, date: fDate, cat: cols[1], amount: parseInt(cols[3])||0, acc: cols[6], memo: cols[7] });
-            }
-            if (newTransactions.length > 0) { transactions = newTransactions; saveToCloud(); alert(`${newTransactions.length}件を読み込み同期しました。`); }
-        };
-        reader.readAsText(file);
-        input.value = '';
-    }
 </script>
 
 <div id="categorySummaryModal" class="modal"><div class="modal-content"><h3 id="catSummaryTitle"></h3><div id="catSummaryList" style="max-height:450px; overflow-y:auto; margin:15px 0;"></div><button class="btn-sub" style="width:100%" onclick="closeModals()">閉じる</button></div></div>
