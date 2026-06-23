@@ -106,11 +106,41 @@
     let selectedDate = "";
     let currentEditId = null;
 
+    // ユニークな文字列IDを生成するヘルパー関数
+    function generateUniqueId(prefix = 'tx') {
+        return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+    }
+
     db.ref('kakeibo_data').on('value', (snapshot) => {
         const data = snapshot.val();
         if (data) {
-            transactions = data.transactions || [];
+            let rawTransactions = data.transactions || [];
+            
+            // ⭐【データ自動クレンジング処理】重複IDや数値IDを検知して綺麗に修復する
+            let idSet = new Set();
+            let hasDuplicateOrOldId = false;
+            
+            let cleanedTransactions = rawTransactions.map((t, idx) => {
+                // 文字列かつ未登録のIDであればそのまま、重複や数値型なら新IDを強制再発行
+                if (t.id && typeof t.id === 'string' && !idSet.has(t.id)) {
+                    idSet.add(t.id);
+                    return t;
+                } else {
+                    hasDuplicateOrOldId = true;
+                    let newId = generateUniqueId('fix_' + idx);
+                    idSet.add(newId);
+                    return { ...t, id: newId };
+                }
+            });
+
+            transactions = cleanedTransactions;
             if(data.categories) categories = data.categories;
+
+            // もしデータ修復が行われた場合は、即座にクラウドへ安全に上書き保存する
+            if (hasDuplicateOrOldId) {
+                db.ref('kakeibo_data').set({ transactions, categories });
+            }
+
             updateUI();
             document.getElementById('syncIndicator').innerText = "● 同期済み";
             document.getElementById('syncIndicator').style.color = "var(--success)";
@@ -176,7 +206,7 @@
     }
 
     // ==========================================
-    // ⭐ CSVインポート機能
+    // CSVインポート機能
     // ==========================================
     function autoCategorize(memo) {
         const m = String(memo).toLowerCase();
@@ -270,7 +300,7 @@
                 if (!isDuplicate) {
                     const category = autoCategorize(memo);
                     tempTransactions.push({
-                        id: Date.now() + i + Math.floor(Math.random() * 1000),
+                        id: generateUniqueId('csv'), // 強力なユニーク文字列IDを発行
                         date: formattedDate,
                         cat: category,
                         amount: amount,
@@ -330,7 +360,7 @@
     function cleanEmoji(text) { return text.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim(); }
 
     // ==========================================
-    // 既存UI制御用関数群（バグ修正箇所）
+    // 既存UI制御用関数群（文字列ID完全対応版）
     // ==========================================
     function openAccountSummary(accName) {
         const currentViewDate = calendar.getDate();
@@ -343,9 +373,9 @@
 
         document.getElementById('catSummaryTitle').innerText = `${viewMonth + 1}月の${accName}明細`;
         
-        // 修正：シングルクォーテーションで囲うように変更し、HTML解釈のバグを回避
+        // 修正：文字列IDを安全に渡すため '${item.id}' で囲う
         document.getElementById('catSummaryList').innerHTML = monthAccData.map(item => `
-            <div class="daily-item" onclick="openEdit(${item.id})">
+            <div class="daily-item" onclick="openEdit('${item.id}')">
                 <div style="font-size:0.9rem;">
                     <strong>${item.date.split('-')[2]}日: ${item.cat}</strong><br>
                     ${getSubLine(item)}
@@ -373,7 +403,7 @@
         const sortedCats = Object.entries(catAgg).sort((a,b) => b[1].total - a[1].total);
         document.getElementById('catSummaryTitle').innerText = `${viewMonth + 1}月のカテゴリ別集計`;
         
-        // 修正：内側の daily-item で onclick="event.stopPropagation(); openEdit(${item.id});" を完全に独立して正しく機能するように調整
+        // 修正：内側の onclick="event.stopPropagation(); openEdit('${item.id}')" で文字列IDとして安全に指定
         document.getElementById('catSummaryList').innerHTML = sortedCats.map(([cat, data], index) => {
             const sortedItems = data.items.sort((a,b) => new Date(a.date) - new Date(b.date));
             return `
@@ -381,7 +411,7 @@
                     <div class="cat-row"><span>${cat}</span><span>¥${data.total.toLocaleString()}</span></div>
                     <div id="cat-detail-${index}" class="cat-details">
                         ${sortedItems.map(item => `
-                            <div class="daily-item" onclick="event.stopPropagation(); openEdit(${item.id})">
+                            <div class="daily-item" onclick="event.stopPropagation(); openEdit('${item.id}')">
                                 <div>
                                     <strong>${item.date.split('-')[2]}日</strong><br>
                                     ${getSubLine(item)}
@@ -406,7 +436,7 @@
         document.querySelectorAll('.modal-date').forEach(el => el.innerText = dateStr.replace(/-/g, '/'));
         const dayData = transactions.filter(t => t.date === dateStr);
         document.getElementById('dailyList').innerHTML = dayData.map(t => `
-            <div class="daily-item" onclick="openEdit(${t.id})">
+            <div class="daily-item" onclick="openEdit('${t.id}')">
                 <div style="font-size:0.9rem;">
                     <strong>${t.cat}</strong><br>
                     ${getSubLine(t)}
@@ -423,11 +453,13 @@
         document.getElementById('deleteBtn').style.display = id ? 'block' : 'none';
         if(id) {
             const it = transactions.find(t => t.id === id);
-            document.getElementById('editDate').value = it.date;
-            document.getElementById('editAcc').value = it.acc;
-            document.getElementById('editCat').value = it.cat;
-            document.getElementById('editAmount').value = it.amount;
-            document.getElementById('editMemo').value = it.memo;
+            if(it) {
+                document.getElementById('editDate').value = it.date;
+                document.getElementById('editAcc').value = it.acc;
+                document.getElementById('editCat').value = it.cat;
+                document.getElementById('editAmount').value = it.amount;
+                document.getElementById('editMemo').value = it.memo;
+            }
         } else {
             document.getElementById('editDate').value = selectedDate;
             document.getElementById('editAcc').value = "楽天カード";
@@ -447,8 +479,10 @@
         };
         if(currentEditId) {
             const i = transactions.findIndex(t => t.id === currentEditId);
-            transactions[i] = { id: currentEditId, ...d };
-        } else { transactions.push({ id: Date.now(), ...d }); }
+            if(i !== -1) transactions[i] = { id: currentEditId, ...d };
+        } else { 
+            transactions.push({ id: generateUniqueId('manual'), ...d }); 
+        }
         saveToCloud();
         closeModals();
         if(selectedDate) showDailyDetail(d.date); 
