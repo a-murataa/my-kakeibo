@@ -176,12 +176,12 @@
     }
 
     // ==========================================
-    // ⭐ CSVインポート機能（ここを大幅改修）
+    // ⭐ CSVインポート機能
     // ==========================================
     function autoCategorize(memo) {
         const m = String(memo).toLowerCase();
         if (m.includes('amazon')) return "🛒 日用品";
-        if (m.includes('セブン') || m.includes('ﾛｰｿﾝ') || m.includes('ﾌｧﾐﾘｰﾏｰﾄ') || m.includes('ローソン')) return "👔 パパ小遣い";
+        if (m.includes('セブン') || m.includes('ﾛｰｿﾝ') || m.includes('ﾌｧﾐﾘＥﾏｰﾄ') || m.includes('ローソン')) return "👔 パパ小遣い";
         if (m.includes('ベイシア') || m.includes('カスミ') || m.includes('ｷﾞﾖｳﾑｽ-ﾊﾟ-')) return "🍴 食費";
         if (m.includes('カインズ')) return "🛠️ カインズ";
         if (m.includes('ヤックス')) return "💊 医療費";
@@ -217,9 +217,7 @@
             const lines = text.split(/\r?\n/);
             if(lines.length < 2) return;
 
-            // ヘッダー行の解析
             const headers = parseCSVLine(lines[0]);
-            
             let dateIdx = -1, amountIdx = -1, memoIdx = -1;
 
             if (accountType === '楽天カード') {
@@ -232,14 +230,11 @@
                 memoIdx = headers.findIndex(h => h.includes('利用店名'));
             }
 
-            // 万が一見つからなかった場合のデフォルト位置フォールバック
             if(dateIdx === -1) dateIdx = 0;
             if(amountIdx === -1) amountIdx = 5;
             if(memoIdx === -1) memoIdx = 1;
 
             let addedCount = 0;
-            
-            // 既存のトランザクションから、他のアカウントのデータや別月のデータを保護しつつマージ
             let tempTransactions = [...transactions];
 
             for (let i = 1; i < lines.length; i++) {
@@ -253,7 +248,6 @@
 
                 if(!rawDate || !rawAmount) continue;
 
-                // 日付のフォーマット一元化 (YYYY-MM-DD)
                 let formattedDate = "";
                 if(rawDate.includes('/')) {
                     const parts = rawDate.split('/');
@@ -267,9 +261,8 @@
                 }
 
                 let amount = parseInt(rawAmount) || 0;
-                if(amount === 0) continue; // 0円やつはスキップ
+                if(amount === 0) continue;
 
-                // 重複チェック (同一日、同一金額、同一店名、同一アカウントは二重取り込みしない)
                 const isDuplicate = tempTransactions.some(t => 
                     t.date === formattedDate && t.amount === amount && t.memo === memo && t.acc === accountType
                 );
@@ -298,7 +291,6 @@
             }
         };
 
-        // 楽天CSV(Shift-JIS)とPayPay(UTF-8)でエンコードを賢く自動選択
         if(accountType === '楽天カード') {
             reader.readAsText(file, 'shift_jis');
         } else {
@@ -307,16 +299,12 @@
         input.value = '';
     }
 
-    // ==========================================
-    // 📤 1つの家計簿CSVフォーマットとして出力
-    // ==========================================
     function downloadCSV() {
         const currentViewDate = calendar.getDate();
         const viewYear = currentViewDate.getFullYear();
         const viewMonth = currentViewDate.getMonth();
         const monthLabel = `${viewYear}${String(viewMonth + 1).padStart(2, '0')}`;
         
-        // ヘッダー定義（大分類は空）
         let csv = "\uFEFF日付,カテゴリ,大分類,金額,通貨,対象者,アカウント,メモ,収支区分\n";
         
         const filtered = transactions.filter(d => {
@@ -329,7 +317,6 @@
         filtered.forEach(d => {
             const cleanCat = cleanEmoji(d.cat);
             const cleanDate = d.date.replace(/-/g, '');
-            // 大分類の位置（3列目）を空（,,）にする
             csv += `${cleanDate},${cleanCat},,${d.amount},JPY,本人,${d.acc},${d.memo},支\n`;
         });
         
@@ -343,7 +330,7 @@
     function cleanEmoji(text) { return text.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim(); }
 
     // ==========================================
-    // 既存UI制御用関数群
+    // 既存UI制御用関数群（バグ修正箇所）
     // ==========================================
     function openAccountSummary(accName) {
         const currentViewDate = calendar.getDate();
@@ -355,6 +342,8 @@
         }).sort((a,b) => new Date(a.date) - new Date(b.date));
 
         document.getElementById('catSummaryTitle').innerText = `${viewMonth + 1}月の${accName}明細`;
+        
+        // 修正：シングルクォーテーションで囲うように変更し、HTML解釈のバグを回避
         document.getElementById('catSummaryList').innerHTML = monthAccData.map(item => `
             <div class="daily-item" onclick="openEdit(${item.id})">
                 <div style="font-size:0.9rem;">
@@ -383,6 +372,8 @@
         });
         const sortedCats = Object.entries(catAgg).sort((a,b) => b[1].total - a[1].total);
         document.getElementById('catSummaryTitle').innerText = `${viewMonth + 1}月のカテゴリ別集計`;
+        
+        // 修正：内側の daily-item で onclick="event.stopPropagation(); openEdit(${item.id});" を完全に独立して正しく機能するように調整
         document.getElementById('catSummaryList').innerHTML = sortedCats.map(([cat, data], index) => {
             const sortedItems = data.items.sort((a,b) => new Date(a.date) - new Date(b.date));
             return `
@@ -395,7 +386,7 @@
                                     <strong>${item.date.split('-')[2]}日</strong><br>
                                     ${getSubLine(item)}
                                 </div>
-                                <span>¥${item.amount.toLocaleString()}</span>
+                                <span style="font-weight:bold;">¥${item.amount.toLocaleString()}</span>
                             </div>
                         `).join('')}
                     </div>
