@@ -30,7 +30,8 @@
         .summary-label { font-size: 0.8rem; color: #5f6368; }
         .summary-value { font-size: 1.25rem; font-weight: bold; display: block; }
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
-        button { padding: 10px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.9rem; }
+        button { padding: 10px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.9rem; transition: opacity 0.2s; }
+        button:hover { opacity: 0.9; }
         .btn-main { background: var(--primary); color: white; width: 100%; }
         .btn-sub { background: white; color: var(--gray); border: 1px solid #dadce0; }
         .btn-danger { background: var(--danger); color: white; }
@@ -55,7 +56,7 @@
 <div class="container">
     <header>
         <h1>🏠 我が家の家計簿 Pro+</h1>
-        <div style="display:flex; gap:10px; align-items: center;">
+        <div style="display:flex; gap:10px; align-items: center; flex-wrap: wrap;">
             <input type="file" id="rakutenFile" accept=".csv" style="display:none" onchange="importCSV(this, '楽天カード')">
             <input type="file" id="paypayFile" accept=".csv" style="display:none" onchange="importCSV(this, 'PayPay')">
             
@@ -75,6 +76,7 @@
                 <div class="summary-item cash" onclick="openAccountSummary('現金')"><span class="summary-label">現金</span><span id="cash-total" class="summary-value">¥0</span></div>
                 
                 <button class="btn-main" style="background:#673ab7; margin-top:5px;" onclick="openCategorySummary()">📊 カテゴリ別集計</button>
+                <button class="btn-sub" style="margin-top:4px; border-color:#673ab7; color:#673ab7;" onclick="recategorizeUnclassified()">🔄 未分類を一括再判定</button>
 
                 <div class="btn-group">
                     <button class="btn-sub" onclick="openMaster()">カテゴリ設定</button>
@@ -106,7 +108,6 @@
     let selectedDate = "";
     let currentEditId = null;
 
-    // ユニークな文字列IDを生成するヘルパー関数
     function generateUniqueId(prefix = 'tx') {
         return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
     }
@@ -115,13 +116,10 @@
         const data = snapshot.val();
         if (data) {
             let rawTransactions = data.transactions || [];
-            
-            // ⭐【データ自動クレンジング処理】重複IDや数値IDを検知して綺麗に修復する
             let idSet = new Set();
             let hasDuplicateOrOldId = false;
             
             let cleanedTransactions = rawTransactions.map((t, idx) => {
-                // 文字列かつ未登録のIDであればそのまま、重複や数値型なら新IDを強制再発行
                 if (t.id && typeof t.id === 'string' && !idSet.has(t.id)) {
                     idSet.add(t.id);
                     return t;
@@ -136,7 +134,6 @@
             transactions = cleanedTransactions;
             if(data.categories) categories = data.categories;
 
-            // もしデータ修復が行われた場合は、即座にクラウドへ安全に上書き保存する
             if (hasDuplicateOrOldId) {
                 db.ref('kakeibo_data').set({ transactions, categories });
             }
@@ -206,18 +203,228 @@
     }
 
     // ==========================================
-    // CSVインポート機能
+    // 自動カテゴリ判定機能（強化版）
     // ==========================================
+    function normalizeMemo(str) {
+        if (!str) return "";
+        return String(str)
+            .normalize('NFKC')
+            .toLowerCase()
+            .replace(/[\u2212\u2010-\u2015\uFF0D\u30FC\u002D\u2014~〜]/g, 'ー');
+    }
+
     function autoCategorize(memo) {
-        const m = String(memo).toLowerCase();
-        if (m.includes('amazon')) return "🛒 日用品";
-        if (m.includes('セブン') || m.includes('ﾛｰｿﾝ') || m.includes('ﾌｧﾐﾘＥﾏｰﾄ') || m.includes('ローソン')) return "👔 パパ小遣い";
-        if (m.includes('ベイシア') || m.includes('カスミ') || m.includes('ｷﾞﾖｳﾑｽ-ﾊﾟ-')) return "🍴 食費";
-        if (m.includes('カインズ')) return "🛠️ カインズ";
-        if (m.includes('ヤックス')) return "💊 医療費";
+        const m = normalizeMemo(memo);
+        if (!m) return "✨ 未分類";
+
+        // 1. 【パパ小遣い】コンビニ全般、タバコ(IQOS)、自販機(Coke ON)
+        if (
+            m.includes('セブン') ||
+            m.includes('ローソン') ||
+            m.includes('ファミリ') ||
+            m.includes('ファミマ') ||
+            m.includes('ミニストップ') ||
+            m.includes('デイリーヤマザキ') ||
+            m.includes('newdays') ||
+            m.includes('ニューデイズ') ||
+            m.includes('セイコーマート') ||
+            m.includes('セコマ') ||
+            m.includes('ポプラ') ||
+            m.includes('iqos') ||
+            m.includes('アイコス') ||
+            m.includes('コークオン') ||
+            m.includes('coke')
+        ) {
+            return "👔 パパ小遣い";
+        }
+
+        // 2. 【Suicaチャージ】
+        if (m.includes('suica') || m.includes('スイカ')) {
+            return "🎫 父Suica";
+        }
+
+        // 3. 【交通費】ETC、有料道路、駐車場
+        if (
+            m.includes('etc') ||
+            m.includes('タイムズ') || m.includes('times') ||
+            m.includes('高速道路') || m.includes('ネクスコ') || m.includes('nexco') ||
+            m.includes('ソガ') || m.includes('チバニシ') || m.includes('ハナワ') ||
+            m.includes('モバラナガラスマ') || m.includes('キミツ')
+        ) {
+            return "🚃 交通費";
+        }
+
+        // 4. 【カインズ】※カインズフードサービスは外食へ
+        if (m.includes('カインズフード')) return "🍱 外食";
+        if (m.includes('カインズ') || m.includes('cainz')) return "🛠️ カインズ";
+
+        // 5. 【外食】ファミレス・ファストフード・外食チェーン
+        if (
+            m.includes('サイゼリヤ') ||
+            m.includes('リンガーハット') ||
+            m.includes('ガキ大将') ||
+            m.includes('たこちゅう') ||
+            m.includes('ロイヤルカリー') ||
+            m.includes('くら寿司') || m.includes('スシロー') || m.includes('はま寿司') ||
+            m.includes('coco壱') || m.includes('ココイチ') ||
+            m.includes('マクドナルド') ||
+            m.includes('ほっともっと') ||
+            m.includes('ミスタードーナツ') || m.includes('ミスド') ||
+            m.includes('ビッグボーイ') ||
+            m.includes('すき家') || m.includes('吉野家') || m.includes('松屋') ||
+            m.includes('ガスト') || m.includes('バーミヤン') || m.includes('丸亀製麺') ||
+            m.includes('大戸屋') || m.includes('スターバックス') || m.includes('コメダ')
+        ) {
+            return "🍱 外食";
+        }
+
+        // 6. 【食費】スーパー・食材・スイーツ
+        if (
+            m.includes('ベイシア') ||
+            m.includes('カスミ') ||
+            m.includes('ランドローム') ||
+            m.includes('センドウ') || m.includes('せんどう') ||
+            m.includes('ギョウムスーパー') || m.includes('業務スーパー') || m.includes('ギヨウム') ||
+            m.includes('フローズン') ||
+            m.includes('二木の菓子') ||
+            m.includes('シャトレーゼ') || m.includes('シヤトレーゼ') ||
+            m.includes('タブンセカイイチ') ||
+            m.includes('イオン') || m.includes('イトーヨーカ堂') ||
+            m.includes('ヤオコー') || m.includes('成城石井') || m.includes('コストコ') || m.includes('カルディ')
+        ) {
+            return "🍴 食費";
+        }
+
+        // 7. 【酒代・ウイスキー】
+        if (
+            m.includes('y.y.g') || m.includes('yyg') ||
+            m.includes('やまや') || m.includes('リカー') || m.includes('カクヤス') ||
+            m.includes('ウイスキー') || m.includes('ビール')
+        ) {
+            return "🍺 酒代";
+        }
+
+        // 8. 【日用品・100均・通販】
+        if (
+            m.includes('amazon') || m.includes('アマゾン') ||
+            m.includes('ダイソー') ||
+            m.includes('キャンドゥ') ||
+            m.includes('セリア') ||
+            m.includes('マツモトキヨシ') || m.includes('ウエルシア') || m.includes('サンドラッグ')
+        ) {
+            return "🛒 日用品";
+        }
+
+        // 9. 【医療費】病院・クリニック・処方箋
+        if (
+            m.includes('ヤックス') ||
+            m.includes('ビョウイン') || m.includes('ビヨウイ') || m.includes('病院') ||
+            m.includes('クリニック') || m.includes('デジスマ') ||
+            m.includes('調剤') || m.includes('薬局') || m.includes('歯科') || m.includes('眼科')
+        ) {
+            return "💊 医療費";
+        }
+
+        // 10. 【通信費】
+        if (
+            m.includes('ソフトバンク') || m.includes('softbank') ||
+            m.includes('au') || m.includes('kddi') ||
+            m.includes('ドコモ') || m.includes('docomo') ||
+            m.includes('ワイモバイル') || m.includes('uq')
+        ) {
+            return "📱 通信費";
+        }
+
+        // 11. 【電気ガス・水道】
+        if (
+            m.includes('オオタキガス') || m.includes('大多喜ガス') ||
+            m.includes('東京ガス') || m.includes('東電') || m.includes('東京電力')
+        ) {
+            return "💡 電気ガス";
+        }
+        if (m.includes('水道')) return "🚰 水道";
+
+        // 12. 【教育・習い事】
+        if (m.includes('クモン') || m.includes('公文') || m.includes('kumon')) {
+            return "📝 公文";
+        }
+
+        // 13. 【子供・育児関連】
+        if (m.includes('西松屋') || m.includes('アカチャンホンポ') || m.includes('ベビザらス')) {
+            return "👶 オムツ";
+        }
+        if (
+            m.includes('モーリーファンタジー') ||
+            m.includes('オリンピア') ||
+            m.includes('任天堂') || m.includes('nintendo') ||
+            m.includes('ビーサイド') || m.includes('ビ-サイズ')
+        ) {
+            return "🧒 子供自由費";
+        }
+
+        // 14. 【レジャー・映画・旅行】
+        if (
+            m.includes('湯楽の里') || m.includes('温泉') ||
+            m.includes('usシネマ') || m.includes('ﾕ-ｴｽｼﾈﾏ') || m.includes('シネマ') || m.includes('映画') ||
+            m.includes('ユニモ') ||
+            m.includes('ルートイン') || m.includes('ホテル')
+        ) {
+            return "🧳 旅行";
+        }
+
+        // 15. 【衣服】
+        if (
+            m.includes('パシオス') || m.includes('ユニクロ') ||
+            m.includes('gu') || m.includes('ジーユー') || m.includes('しまむら')
+        ) {
+            return "👑 衣服";
+        }
+
+        // 16. 【家電】
+        if (
+            m.includes('ケーズデンキ') || m.includes('ヤマダデンキ') ||
+            m.includes('ビックカメラ') || m.includes('ヨドバシ')
+        ) {
+            return "📺 家電大物";
+        }
+
+        // 17. 【やりくり費 / チャージ / リサイクル】
+        if (m.includes('楽天ペイ') || m.includes('チャージ')) return "👛 やりくり費";
+        if (
+            m.includes('ハードオフ') || m.includes('ワンダーレックス') || m.includes('ワンダーレツクス') ||
+            m.includes('tsutaya') || m.includes('ツタヤ') || m.includes('あさひ')
+        ) {
+            return "👛 やりくり費";
+        }
+
         return "✨ 未分類";
     }
 
+    // 既存の未分類データを一括で再分類する機能
+    function recategorizeUnclassified() {
+        let fixedCount = 0;
+        transactions.forEach(t => {
+            if (t.cat === "✨ 未分類" || !t.cat) {
+                const newCat = autoCategorize(t.memo);
+                if (newCat !== "✨ 未分類") {
+                    t.cat = newCat;
+                    fixedCount++;
+                }
+            }
+        });
+
+        if (fixedCount > 0) {
+            saveToCloud();
+            updateUI();
+            alert(`【完了】未分類だった ${fixedCount} 件の明細を自動分類してクラウドに保存しました！`);
+        } else {
+            alert("再分類できる未分類データは見つかりませんでした。（すべて分類済みか、自動判定ルールに該当しない明細です）");
+        }
+    }
+
+    // ==========================================
+    // CSVインポート機能（文字コード自動判別対応版）
+    // ==========================================
     function parseCSVLine(line) {
         const result = [];
         let insideQuote = false;
@@ -243,7 +450,24 @@
 
         const reader = new FileReader();
         reader.onload = function(e) {
-            const text = e.target.result;
+            const buffer = e.target.result;
+            const uint8 = new Uint8Array(buffer);
+            let text = "";
+
+            if (uint8.length >= 3 && uint8[0] === 0xef && uint8[1] === 0xbb && uint8[2] === 0xbf) {
+                text = new TextDecoder('utf-8').decode(uint8);
+            } else {
+                try {
+                    text = new TextDecoder('utf-8', { fatal: true }).decode(uint8);
+                } catch (err) {
+                    text = new TextDecoder('shift_jis').decode(uint8);
+                }
+            }
+
+            if (text.charCodeAt(0) === 0xFEFF) {
+                text = text.slice(1);
+            }
+
             const lines = text.split(/\r?\n/);
             if(lines.length < 2) return;
 
@@ -300,7 +524,7 @@
                 if (!isDuplicate) {
                     const category = autoCategorize(memo);
                     tempTransactions.push({
-                        id: generateUniqueId('csv'), // 強力なユニーク文字列IDを発行
+                        id: generateUniqueId('csv'),
                         date: formattedDate,
                         cat: category,
                         amount: amount,
@@ -321,11 +545,7 @@
             }
         };
 
-        if(accountType === '楽天カード') {
-            reader.readAsText(file, 'shift_jis');
-        } else {
-            reader.readAsText(file, 'utf-8');
-        }
+        reader.readAsArrayBuffer(file);
         input.value = '';
     }
 
@@ -373,7 +593,6 @@
 
         document.getElementById('catSummaryTitle').innerText = `${viewMonth + 1}月の${accName}明細`;
         
-        // 修正：文字列IDを安全に渡すため '${item.id}' で囲う
         document.getElementById('catSummaryList').innerHTML = monthAccData.map(item => `
             <div class="daily-item" onclick="openEdit('${item.id}')">
                 <div style="font-size:0.9rem;">
@@ -403,7 +622,6 @@
         const sortedCats = Object.entries(catAgg).sort((a,b) => b[1].total - a[1].total);
         document.getElementById('catSummaryTitle').innerText = `${viewMonth + 1}月のカテゴリ別集計`;
         
-        // 修正：内側の onclick="event.stopPropagation(); openEdit('${item.id}')" で文字列IDとして安全に指定
         document.getElementById('catSummaryList').innerHTML = sortedCats.map(([cat, data], index) => {
             const sortedItems = data.items.sort((a,b) => new Date(a.date) - new Date(b.date));
             return `
